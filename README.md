@@ -17,6 +17,26 @@ Plataforma de avaliação contínua de agentes de IA. Permite testar agentes ao 
 
 ---
 
+## Início rápido
+
+Após clonar o repositório, um único comando sobe backend e frontend:
+
+```bash
+# Windows
+start.bat
+
+# Linux / macOS
+chmod +x start.sh && ./start.sh
+```
+
+O script:
+1. Copia `.env.example` → `.env` (na primeira execução, edite o arquivo com suas credenciais)
+2. Cria o virtualenv Python e instala as dependências
+3. Sobe o backend em `http://localhost:8000`
+4. Instala as dependências Node e sobe o frontend em `http://localhost:3000`
+
+---
+
 ## Pré-requisitos
 
 | Ferramenta | Versão mínima |
