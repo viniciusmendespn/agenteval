@@ -1,0 +1,183 @@
+"use client"
+
+import { useEffect, useState, useMemo } from "react"
+import Link from "next/link"
+import { GitCompare } from "lucide-react"
+import { getRuns, type TestRun } from "@/lib/api"
+
+const statusColor: Record<string, string> = {
+  completed: "bg-green-100 text-green-700",
+  running:   "bg-yellow-100 text-yellow-700",
+  failed:    "bg-red-100 text-red-700",
+  pending:   "bg-gray-100 text-gray-600",
+}
+
+const statusLabel: Record<string, string> = {
+  completed: "Concluída",
+  running:   "Executando",
+  failed:    "Falhou",
+  pending:   "Pendente",
+}
+
+function ScoreBadge({ score }: { score?: number | null }) {
+  if (score == null) return <span className="text-gray-400">—</span>
+  const pct = Math.round(score * 100)
+  const color = pct >= 80 ? "text-green-600 bg-green-50" : pct >= 50 ? "text-yellow-700 bg-yellow-50" : "text-red-600 bg-red-50"
+  return <span className={`text-sm font-bold px-2 py-0.5 rounded ${color}`}>{pct}%</span>
+}
+
+export default function RunsPage() {
+  const [runs, setRuns] = useState<TestRun[]>([])
+  const [agentFilter, setAgentFilter] = useState<string>("all")
+  const [statusFilter, setStatusFilter] = useState<string>("all")
+
+  useEffect(() => {
+    getRuns().then(setRuns).catch(() => {})
+  }, [])
+
+  const agents = useMemo(() => {
+    const map = new Map<number, string>()
+    for (const r of runs) {
+      if (r.agent_id && r.agent_name) map.set(r.agent_id, r.agent_name)
+    }
+    return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]))
+  }, [runs])
+
+  const filtered = useMemo(() => {
+    return runs.filter(r => {
+      if (agentFilter !== "all" && String(r.agent_id) !== agentFilter) return false
+      if (statusFilter !== "all" && r.status !== statusFilter) return false
+      return true
+    })
+  }, [runs, agentFilter, statusFilter])
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Execuções</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {filtered.length} de {runs.length} execução(ões)
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Link href="/runs/compare"
+            className="border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
+            <GitCompare className="w-4 h-4" />
+            Comparar
+          </Link>
+          <Link href="/runs/new"
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
+            + Nova execução
+          </Link>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-gray-500">Agente</label>
+          <select
+            value={agentFilter}
+            onChange={e => setAgentFilter(e.target.value)}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">Todos os agentes</option>
+            {agents.map(([id, name]) => (
+              <option key={id} value={String(id)}>{name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-gray-500">Status</label>
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="all">Todos</option>
+            <option value="completed">Concluída</option>
+            <option value="running">Executando</option>
+            <option value="failed">Falhou</option>
+            <option value="pending">Pendente</option>
+          </select>
+        </div>
+
+        {(agentFilter !== "all" || statusFilter !== "all") && (
+          <button
+            onClick={() => { setAgentFilter("all"); setStatusFilter("all") }}
+            className="text-xs text-gray-400 hover:text-gray-600 underline"
+          >
+            limpar filtros
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+          <p className="text-gray-500 text-sm mb-3">
+            {runs.length === 0 ? "Nenhuma execução ainda." : "Nenhuma execução encontrada com os filtros selecionados."}
+          </p>
+          {runs.length === 0 && (
+            <Link href="/runs/new" className="text-blue-600 hover:underline text-sm">
+              Criar primeira execução →
+            </Link>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                <th className="text-left px-5 py-3 font-medium text-gray-600">#</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-600">Agente</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-600">Perfil</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-600">Status</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-600">Casos</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-600">Score geral</th>
+                <th className="text-left px-5 py-3 font-medium text-gray-600">Criado em</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map((r) => (
+                <tr key={r.id} className="hover:bg-gray-50/50">
+                  <td className="px-5 py-3 text-gray-400">#{r.id}</td>
+                  <td className="px-5 py-3 font-medium text-gray-800">
+                    {r.agent_name ?? <span className="text-gray-400">—</span>}
+                  </td>
+                  <td className="px-5 py-3 text-gray-500 text-xs">
+                    {r.profile_name ?? <span className="text-gray-400">—</span>}
+                  </td>
+                  <td className="px-5 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${statusColor[r.status]}`}>
+                      {statusLabel[r.status] ?? r.status}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-gray-500">{r.test_case_ids.length}</td>
+                  <td className="px-5 py-3"><ScoreBadge score={r.overall_score} /></td>
+                  <td className="px-5 py-3 text-gray-400">
+                    {new Date(r.created_at).toLocaleDateString("pt-BR")}
+                  </td>
+                  <td className="px-5 py-3">
+                    <div className="flex items-center gap-3">
+                      <Link href={`/runs/${r.id}`} className="text-blue-600 hover:underline text-xs">
+                        ver resultados
+                      </Link>
+                      {r.status === "completed" && (
+                        <Link href={`/runs/compare?a=${r.id}`} className="text-gray-400 hover:text-gray-600 text-xs">
+                          comparar
+                        </Link>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}

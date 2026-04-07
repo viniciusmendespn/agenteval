@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Ambiente
+.env
+*.env
+
+# Banco de dados
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# Temporários
+backend/tmp/
