@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text, inspect
 from .database import engine, Base
 from .routers import agents, test_cases, profiles, runs, imports, datasets, dataset_evaluations
-from .routers import analytics
+from .routers import analytics, chat
 
 Base.metadata.create_all(bind=engine)
 
@@ -51,6 +51,7 @@ app.include_router(imports.router)
 app.include_router(datasets.router)
 app.include_router(dataset_evaluations.router)
 app.include_router(analytics.router)
+app.include_router(chat.router)
 
 
 @app.get("/health")

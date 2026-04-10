@@ -1,0 +1,182 @@
+"use client"
+
+import { useState, useRef, useEffect } from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import { MessageSquare, X, Send, Bot, User, Loader2 } from "lucide-react"
+
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
+type Message = {
+  role: "user" | "assistant"
+  content: string
+}
+
+export default function FloatingChat() {
+  const [open, setOpen] = useState(false)
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      role: "assistant",
+      content:
+        "Olá! Sou o assistente do AgentEval. Posso ajudar você a criar agentes, perfis de avaliação, casos de teste e iniciar execuções. O que você precisa?",
+    },
+  ])
+  const [input, setInput] = useState("")
+  const [loading, setLoading] = useState(false)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages, loading])
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => inputRef.current?.focus(), 100)
+    }
+  }, [open])
+
+  async function send() {
+    const text = input.trim()
+    if (!text || loading) return
+
+    const newMessages: Message[] = [...messages, { role: "user", content: text }]
+    setMessages(newMessages)
+    setInput("")
+    setLoading(true)
+
+    try {
+      const res = await fetch(`${API}/chat/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+        }),
+      })
+
+      if (!res.ok) throw new Error(await res.text())
+      const data = await res.json()
+
+      setMessages((prev) => [...prev, { role: "assistant", content: data.reply }])
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `Erro ao conectar com o assistente: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      ])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault()
+      send()
+    }
+  }
+
+  return (
+    <>
+      {/* Painel de chat */}
+      {open && (
+        <div className="fixed bottom-20 right-6 z-50 w-[380px] max-h-[600px] flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 bg-indigo-600 text-white shrink-0">
+            <div className="flex items-center gap-2">
+              <Bot size={18} />
+              <span className="font-semibold text-sm">Assistente AgentEval</span>
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              className="hover:bg-indigo-500 rounded-full p-1 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Mensagens */}
+          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
+            {messages.map((m, i) => (
+              <div key={i} className={`flex gap-2 ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                <div
+                  className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
+                    m.role === "user" ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {m.role === "user" ? <User size={14} /> : <Bot size={14} />}
+                </div>
+                <div
+                  className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                    m.role === "user"
+                      ? "bg-indigo-600 text-white rounded-tr-sm"
+                      : "bg-gray-100 text-gray-800 rounded-tl-sm"
+                  }`}
+                >
+                  {m.role === "assistant" ? (
+                    <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-1 prose-code:text-xs">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                    </div>
+                  ) : (
+                    <span className="whitespace-pre-wrap">{m.content}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {loading && (
+              <div className="flex gap-2">
+                <div className="shrink-0 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-600">
+                  <Bot size={14} />
+                </div>
+                <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3 py-2">
+                  <Loader2 size={16} className="animate-spin text-gray-400" />
+                </div>
+              </div>
+            )}
+
+            <div ref={bottomRef} />
+          </div>
+
+          {/* Input */}
+          <div className="shrink-0 border-t border-gray-100 px-3 py-2 flex items-end gap-2 bg-white">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Digite sua mensagem… (Enter para enviar)"
+              rows={1}
+              disabled={loading}
+              className="flex-1 resize-none text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50 max-h-28 overflow-y-auto"
+              style={{ minHeight: "38px" }}
+              onInput={(e) => {
+                const el = e.currentTarget
+                el.style.height = "auto"
+                el.style.height = Math.min(el.scrollHeight, 112) + "px"
+              }}
+            />
+            <button
+              onClick={send}
+              disabled={!input.trim() || loading}
+              className="shrink-0 w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <Send size={15} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Botão flutuante */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center"
+        aria-label="Abrir assistente"
+      >
+        {open ? <X size={22} /> : <MessageSquare size={22} />}
+      </button>
+    </>
+  )
+}

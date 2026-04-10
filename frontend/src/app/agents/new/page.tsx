@@ -59,7 +59,7 @@ export default function NewAgentPage() {
   function handleBodyChange(val: string) {
     setRequestBody(val)
     try {
-      JSON.parse(val.replace(/\{\{message\}\}/g, '""'))
+      JSON.parse(val.replace(/\{\{[^}]+\}\}/g, 'placeholder'))
       setBodyError(null)
     } catch {
       setBodyError("JSON inválido")
