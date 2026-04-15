@@ -56,6 +56,11 @@ export type Agent = {
   created_at: string
 }
 
+export type Turn = {
+  input: string
+  expected_output?: string
+}
+
 export type TestCase = {
   id: number
   title: string
@@ -63,6 +68,7 @@ export type TestCase = {
   expected_output?: string
   context?: string[]
   tags?: string
+  turns?: Turn[]  // undefined/null = single-turn
   created_at: string
 }
 
@@ -153,6 +159,7 @@ export type TestResult = {
   reasons: Record<string, string>
   passed?: boolean
   error?: string
+  turns_executed?: number
   created_at: string
 }
 
@@ -176,6 +183,8 @@ export type DatasetRecord = {
   input: string
   actual_output?: string
   context?: string[]
+  session_id?: string
+  turn_order?: number
   created_at: string
 }
 
@@ -307,6 +316,8 @@ export type MappingRequest = {
   output_path?: string
   context_paths: string[]
   manual_context?: string
+  session_id_path?: string
+  order_path?: string
 }
 
 export type AnalyzeResult = {
@@ -318,12 +329,14 @@ export type AnalyzeResult = {
     input_path: string | null
     output_path: string | null
     context_paths: string[]
+    session_id_path: string | null
+    order_path: string | null
     reasoning: string
   }
 }
 
 export type PreviewResult = {
-  previews: { input: string; output?: string; context?: string[] }[]
+  previews: { input: string; output?: string; context?: string[]; session_id?: string; turn_order?: number }[]
   record_count: number
 }
 
@@ -354,6 +367,8 @@ export type AppendRequest = {
   output_path?: string
   context_paths: string[]
   manual_context?: string
+  session_id_path?: string
+  order_path?: string
 }
 
 export const appendToDataset = (data: AppendRequest) =>

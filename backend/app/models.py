@@ -30,6 +30,7 @@ class TestCase(Base):
     expected_output = Column(Text, nullable=True)
     context = Column(JSON, nullable=True)
     tags = Column(String, nullable=True)
+    turns = Column(JSON, nullable=True)  # [{input, expected_output}] — null = single-turn
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -90,6 +91,7 @@ class TestResult(Base):
     reasons = Column(JSON, default=dict)
     passed = Column(Boolean, nullable=True)
     error = Column(Text, nullable=True)
+    turns_executed = Column(Integer, nullable=True)  # quantos turnos rodaram
     created_at = Column(DateTime, default=datetime.utcnow)
 
     run = relationship("TestRun", back_populates="results")
@@ -121,6 +123,8 @@ class DatasetRecord(Base):
     input = Column(Text, nullable=False)
     actual_output = Column(Text, nullable=True)
     context = Column(JSON, nullable=True)
+    session_id = Column(String, nullable=True)   # ID da sessão/conversa
+    turn_order = Column(Integer, nullable=True)  # posição 1-based dentro da sessão
     created_at = Column(DateTime, default=datetime.utcnow)
 
     dataset = relationship("Dataset", back_populates="records")

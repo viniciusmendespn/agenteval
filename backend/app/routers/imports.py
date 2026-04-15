@@ -29,6 +29,8 @@ class MappingRequest(BaseModel):
     output_path: Optional[str] = None
     context_paths: list[str] = Field(default_factory=list)
     manual_context: Optional[str] = None
+    session_id_path: Optional[str] = None  # campo que identifica a sessão/conversa
+    order_path: Optional[str] = None       # campo que ordena mensagens dentro da sessão
 
 
 class AppendRequest(BaseModel):
@@ -38,6 +40,8 @@ class AppendRequest(BaseModel):
     output_path: Optional[str] = None
     context_paths: list[str] = Field(default_factory=list)
     manual_context: Optional[str] = None
+    session_id_path: Optional[str] = None
+    order_path: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -149,8 +153,11 @@ def confirm_import(
                 input=mapped["input"],
                 actual_output=mapped["output"] or None,
                 context=mapped["context"] or None,
+                session_id=mapped["session_id"],
+                turn_order=mapped["turn_order"],
             ))
 
+    _rerank_sessions(records_to_add)
     db.bulk_save_objects(records_to_add)
     db.commit()
 
@@ -192,6 +199,8 @@ def append_to_dataset(
             output_path=data.output_path,
             context_paths=data.context_paths,
             manual_context=data.manual_context,
+            session_id_path=data.session_id_path,
+            order_path=data.order_path,
         )
         for record in file_records:
             mapped = _map_record(record, mapping, global_index, session_tag)
@@ -203,8 +212,11 @@ def append_to_dataset(
                 input=mapped["input"],
                 actual_output=mapped["output"] or None,
                 context=mapped["context"] or None,
+                session_id=mapped["session_id"],
+                turn_order=mapped["turn_order"],
             ))
 
+    _rerank_sessions(records_to_add)
     db.bulk_save_objects(records_to_add)
     db.commit()
 
@@ -214,6 +226,41 @@ def append_to_dataset(
 # ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
+
+def _parse_order(val) -> Optional[int]:
+    """Converte número, string numérica ou ISO datetime para int (para re-ranking posterior)."""
+    if val is None:
+        return None
+    if isinstance(val, int):
+        return val
+    if isinstance(val, float):
+        return int(val)
+    if isinstance(val, str):
+        try:
+            return int(val)
+        except ValueError:
+            pass
+        try:
+            from datetime import datetime as dt
+            parsed = dt.fromisoformat(val.replace("Z", "+00:00"))
+            return int(parsed.timestamp())
+        except Exception:
+            pass
+    return None
+
+
+def _rerank_sessions(records: list) -> None:
+    """Re-rankeia turn_order para posições 1-based por grupo session_id."""
+    sessions: dict[str, list[tuple[int, int]]] = {}
+    for idx, rec in enumerate(records):
+        sid = rec.session_id
+        if sid and rec.turn_order is not None:
+            sessions.setdefault(sid, []).append((rec.turn_order, idx))
+    for sid, entries in sessions.items():
+        entries.sort(key=lambda x: x[0])
+        for rank, (_, rec_idx) in enumerate(entries, start=1):
+            records[rec_idx].turn_order = rank
+
 
 def _map_record(record: dict, data: MappingRequest, index: int, session_tag: str = "") -> dict:
     input_val = to_str(resolve_path(record, data.input_path)) or ""
@@ -227,8 +274,20 @@ def _map_record(record: dict, data: MappingRequest, index: int, session_tag: str
     if data.manual_context and data.manual_context.strip():
         context.append(data.manual_context.strip())
 
+    session_id_val = None
+    if data.session_id_path:
+        raw = resolve_path(record, data.session_id_path)
+        if raw is not None:
+            session_id_val = to_str(raw)
+
+    order_val = None
+    if data.order_path:
+        order_val = _parse_order(resolve_path(record, data.order_path))
+
     return {
         "input": input_val,
         "output": output_val,
         "context": context if context else None,
+        "session_id": session_id_val,
+        "turn_order": order_val,
     }

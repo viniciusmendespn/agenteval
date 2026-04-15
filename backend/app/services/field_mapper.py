@@ -14,6 +14,8 @@ def suggest_mapping(sample: list[dict], all_paths: list[str]) -> dict:
             "input_path": None,
             "output_path": None,
             "context_paths": [],
+            "session_id_path": None,
+            "order_path": None,
             "reasoning": "LLM judge não configurado — faça o mapeamento manualmente.",
         }
 
@@ -39,12 +41,16 @@ Sua tarefa: identificar qual caminho corresponde a cada papel abaixo.
 - input: a pergunta ou mensagem enviada pelo usuário ao agente
 - output: a resposta gerada pelo agente (pode ser null se não houver)
 - context_paths: caminhos com informações de contexto, trace de execução ou documentos recuperados (pode ser lista vazia)
+- session_id_path: campo que identifica a qual sessão/conversa cada mensagem pertence (ex: "session_id", "conversation_id", "thread_id", "chat_id") — null se não existir
+- order_path: campo que define a ordem das mensagens dentro de uma sessão (ex: "turn", "timestamp", "created_at", "sequence", "index") — null se não existir
 
 Responda APENAS com JSON válido, sem markdown, no formato exato:
 {{
   "input_path": "<caminho exato da lista ou null>",
   "output_path": "<caminho exato da lista ou null>",
   "context_paths": ["<caminho>"],
+  "session_id_path": "<caminho exato da lista ou null>",
+  "order_path": "<caminho exato da lista ou null>",
   "reasoning": "<explicação breve em português de por que escolheu esses campos>"
 }}
 
@@ -78,6 +84,10 @@ Use EXATAMENTE os caminhos da lista fornecida. Se não encontrar um campo, use n
         result["context_paths"] = [
             p for p in (result.get("context_paths") or []) if p in path_set
         ]
+        if result.get("session_id_path") not in path_set:
+            result["session_id_path"] = None
+        if result.get("order_path") not in path_set:
+            result["order_path"] = None
 
         return result
 
@@ -86,5 +96,7 @@ Use EXATAMENTE os caminhos da lista fornecida. Se não encontrar um campo, use n
             "input_path": None,
             "output_path": None,
             "context_paths": [],
+            "session_id_path": None,
+            "order_path": None,
             "reasoning": f"Não foi possível obter sugestão automática: {e}",
         }

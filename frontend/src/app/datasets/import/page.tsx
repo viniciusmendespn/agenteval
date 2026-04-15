@@ -27,6 +27,8 @@ export default function ImportDatasetPage() {
   const [outputPath, setOutputPath] = useState(NONE)
   const [contextPaths, setContextPaths] = useState<string[]>([])
   const [manualContext, setManualContext] = useState("")
+  const [sessionIdPath, setSessionIdPath] = useState(NONE)
+  const [orderPath, setOrderPath] = useState(NONE)
 
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [createdDatasetId, setCreatedDatasetId] = useState<number | null>(null)
@@ -45,6 +47,8 @@ export default function ImportDatasetPage() {
       setInputPath(result.suggestion.input_path ?? "")
       setOutputPath(result.suggestion.output_path ?? NONE)
       setContextPaths(result.suggestion.context_paths ?? [])
+      setSessionIdPath(result.suggestion.session_id_path ?? NONE)
+      setOrderPath(result.suggestion.order_path ?? NONE)
       if (!datasetName) setDatasetName(file.name.replace(/\.(json|jsonl|gz)+$/i, ""))
       setStep("mapping")
     } catch (e: any) { setError(e.message) }
@@ -92,6 +96,8 @@ export default function ImportDatasetPage() {
       output_path: outputPath === NONE ? undefined : outputPath,
       context_paths: contextPaths,
       manual_context: manualContext.trim() || undefined,
+      session_id_path: sessionIdPath === NONE ? undefined : sessionIdPath,
+      order_path: orderPath === NONE ? undefined : orderPath,
     }
   }
 
@@ -192,6 +198,24 @@ export default function ImportDatasetPage() {
               <label className={lbl}>Resposta do agente</label>
               <p className={hint}>Campo com a resposta que o agente já deu. Será avaliada pelas métricas.</p>
               <select className={inp} value={outputPath} onChange={e => setOutputPath(e.target.value)}>
+                <option value={NONE}>— não importar —</option>
+                {analysis.all_paths.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={lbl}>Session ID <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <p className={hint}>Campo que identifica a sessão ou conversa. Registros com o mesmo valor serão agrupados.</p>
+              <select className={inp} value={sessionIdPath} onChange={e => setSessionIdPath(e.target.value)}>
+                <option value={NONE}>— não importar —</option>
+                {analysis.all_paths.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className={lbl}>Ordenação <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <p className={hint}>Campo que define a ordem das mensagens dentro de uma sessão. Pode ser número, timestamp ou data.</p>
+              <select className={inp} value={orderPath} onChange={e => setOrderPath(e.target.value)}>
                 <option value={NONE}>— não importar —</option>
                 {analysis.all_paths.map(p => <option key={p} value={p}>{p}</option>)}
               </select>

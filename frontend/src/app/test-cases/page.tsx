@@ -48,9 +48,11 @@ export default function TestCasesPage() {
                 <p className="font-semibold text-gray-900">{tc.title}</p>
                 <p className="mt-1 line-clamp-2 text-sm text-gray-500">{tc.input}</p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {tc.expected_output && (
+                  {tc.turns && tc.turns.length > 0 ? (
+                    <span className="flame-chip bg-purple-100 text-purple-700 border-purple-200">{tc.turns.length} turnos</span>
+                  ) : tc.expected_output ? (
                     <span className="flame-chip">resposta esperada</span>
-                  )}
+                  ) : null}
                   {tc.context && tc.context.length > 0 && (
                     <span className="flame-chip">{tc.context.length} contexto(s)</span>
                   )}

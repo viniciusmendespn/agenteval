@@ -4,7 +4,8 @@ import { useRouter, useParams } from "next/navigation"
 import { getAgent, updateAgent, testConnection, previewResponse } from "@/lib/api"
 
 const PRESETS = [
-  { label: "Simples",       body: `{"message": "{{message}}"}`,                                                                                                                    output: "response" },
+  { label: "Simples",        body: `{"message": "{{message}}"}`,                                                                                                                    output: "response" },
+  { label: "Com sessão",     body: `{"message": "{{message}}", "session_id": "{{sessionId}}"}`,                                                                                    output: "response" },
   { label: "OpenAI / Azure", body: `{\n  "messages": [\n    {"role": "user", "content": "{{message}}"}\n  ]\n}`,                                                                   output: "choices.0.message.content" },
   { label: "OpenAI + System",body: `{\n  "messages": [\n    {"role": "system", "content": "Você é um assistente."},\n    {"role": "user", "content": "{{message}}"}\n  ],\n  "temperature": 0.7\n}`, output: "choices.0.message.content" },
   { label: "SSE texto puro", body: `{"message": "{{message}}"}`,                                                                                                                    output: "", sse: true },
@@ -145,7 +146,10 @@ export default function EditAgentPage() {
                   className="text-xs px-2 py-0.5 rounded border border-gray-200 hover:bg-gray-50 text-gray-500">{p.label}</button>
               ))}</div>
             </div>
-            <p className="text-xs text-gray-400 mb-1">Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code> onde a pergunta será inserida.</p>
+            <p className="text-xs text-gray-400 mb-1">
+              Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code> para a mensagem e{" "}
+              <code className="bg-gray-100 px-1 rounded">{"{{sessionId}}"}</code> para manter sessão em agentes conversacionais (multi-turno).
+            </p>
             <textarea className={`${inp} h-32 font-mono text-xs resize-y ${bodyError ? "border-red-400" : ""}`}
               value={requestBody} onChange={e => handleBodyChange(e.target.value)} spellCheck={false} />
             {bodyError && <p className="text-xs text-red-500 mt-1">{bodyError}</p>}

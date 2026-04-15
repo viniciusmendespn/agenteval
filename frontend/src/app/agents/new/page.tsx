@@ -10,6 +10,11 @@ const PRESETS = [
     output: "response",
   },
   {
+    label: "Com sessão",
+    body: `{"message": "{{message}}", "session_id": "{{sessionId}}"}`,
+    output: "response",
+  },
+  {
     label: "OpenAI / Azure",
     body: `{\n  "messages": [\n    {"role": "user", "content": "{{message}}"}\n  ]\n}`,
     output: "choices.0.message.content",
@@ -176,7 +181,10 @@ export default function NewAgentPage() {
                 ))}
               </div>
             </div>
-            <p className="text-xs text-gray-400 mb-1">Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code> onde a pergunta do caso de teste será inserida.</p>
+            <p className="text-xs text-gray-400 mb-1">
+              Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code> para a mensagem e{" "}
+              <code className="bg-gray-100 px-1 rounded">{"{{sessionId}}"}</code> para manter sessão em agentes conversacionais (multi-turno).
+            </p>
             <textarea
               className={`${inp} h-32 font-mono text-xs resize-y ${bodyError ? "border-red-400" : ""}`}
               value={requestBody}

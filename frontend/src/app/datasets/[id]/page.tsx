@@ -1,11 +1,14 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { Upload, Trash2 } from "lucide-react"
-import { getDataset, bulkDeleteRecords, type DatasetDetail } from "@/lib/api"
+import { getDataset, bulkDeleteRecords, type DatasetDetail, type DatasetRecord } from "@/lib/api"
 import AppendDatasetModal from "@/components/AppendDatasetModal"
+
+// Two subtle background tints that alternate between sessions
+const SESSION_TINTS = ["bg-blue-50/30", "bg-amber-50/30"]
 
 export default function DatasetPage() {
   const params = useParams()
@@ -25,16 +28,38 @@ export default function DatasetPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Detect session data and sort by (session_id, turn_order) if present
+  const { sortedRecords, hasSessionData } = useMemo(() => {
+    if (!ds) return { sortedRecords: [], hasSessionData: false }
+    const hasSession = ds.records.some(r => r.session_id != null)
+    if (!hasSession) return { sortedRecords: ds.records, hasSessionData: false }
+    const sorted = [...ds.records].sort((a, b) => {
+      const sidCmp = (a.session_id ?? "").localeCompare(b.session_id ?? "")
+      if (sidCmp !== 0) return sidCmp
+      return (a.turn_order ?? 0) - (b.turn_order ?? 0)
+    })
+    return { sortedRecords: sorted, hasSessionData: true }
+  }, [ds])
+
+  // Assign a tint index per unique session_id
+  const sessionTintMap = useMemo(() => {
+    const map: Record<string, number> = {}
+    let idx = 0
+    for (const r of sortedRecords) {
+      if (r.session_id && !(r.session_id in map)) {
+        map[r.session_id] = idx++ % SESSION_TINTS.length
+      }
+    }
+    return map
+  }, [sortedRecords])
+
   const allIds = ds?.records.map(r => r.id) ?? []
   const allSelected = allIds.length > 0 && allIds.every(id => selected.has(id))
   const someSelected = selected.size > 0
 
   function toggleAll() {
-    if (allSelected) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(allIds))
-    }
+    if (allSelected) setSelected(new Set())
+    else setSelected(new Set(allIds))
   }
 
   function toggleOne(id: number) {
@@ -123,42 +148,69 @@ export default function DatasetPage() {
                 />
               </th>
               <th className="text-left px-4 py-3 font-medium text-gray-600 w-8">#</th>
+              {hasSessionData && (
+                <th className="text-left px-4 py-3 font-medium text-gray-600 w-28">Session</th>
+              )}
+              {hasSessionData && (
+                <th className="text-left px-4 py-3 font-medium text-gray-600 w-14">Turno</th>
+              )}
               <th className="text-left px-4 py-3 font-medium text-gray-600">Input</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Resposta</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600 w-24">Contexto</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {ds.records.map((r, i) => (
-              <tr
-                key={r.id}
-                className={`hover:bg-gray-50 cursor-pointer ${selected.has(r.id) ? "bg-blue-50/60" : ""}`}
-                onClick={() => toggleOne(r.id)}
-              >
-                <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selected.has(r.id)}
-                    onChange={() => toggleOne(r.id)}
-                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  />
-                </td>
-                <td className="px-4 py-3 text-gray-400 text-xs">{i + 1}</td>
-                <td className="px-4 py-3">
-                  <p className="text-sm text-gray-800 line-clamp-2">{r.input}</p>
-                </td>
-                <td className="px-4 py-3">
-                  {r.actual_output
-                    ? <p className="text-xs text-gray-600 line-clamp-2">{r.actual_output}</p>
-                    : <span className="text-xs text-gray-300">—</span>}
-                </td>
-                <td className="px-4 py-3">
-                  {r.context && r.context.length > 0
-                    ? <span className="text-xs text-blue-600">{r.context.length} item(s)</span>
-                    : <span className="text-xs text-gray-300">—</span>}
-                </td>
-              </tr>
-            ))}
+            {sortedRecords.map((r, i) => {
+              const sessionTint = r.session_id != null
+                ? SESSION_TINTS[sessionTintMap[r.session_id] ?? 0]
+                : ""
+              return (
+                <tr
+                  key={r.id}
+                  className={`hover:bg-gray-50/80 cursor-pointer transition-colors ${selected.has(r.id) ? "bg-blue-50/60" : sessionTint}`}
+                  onClick={() => toggleOne(r.id)}
+                >
+                  <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(r.id)}
+                      onChange={() => toggleOne(r.id)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-gray-400 text-xs">{i + 1}</td>
+                  {hasSessionData && (
+                    <td className="px-4 py-3">
+                      {r.session_id
+                        ? <span className="text-xs font-mono text-gray-500 block truncate max-w-[96px]" title={r.session_id}>
+                            {r.session_id.length > 12 ? `${r.session_id.slice(0, 12)}…` : r.session_id}
+                          </span>
+                        : <span className="text-xs text-gray-300">—</span>}
+                    </td>
+                  )}
+                  {hasSessionData && (
+                    <td className="px-4 py-3">
+                      {r.turn_order != null
+                        ? <span className="text-xs text-gray-600">{r.turn_order}</span>
+                        : <span className="text-xs text-gray-300">—</span>}
+                    </td>
+                  )}
+                  <td className="px-4 py-3">
+                    <p className="text-sm text-gray-800 line-clamp-2">{r.input}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    {r.actual_output
+                      ? <p className="text-xs text-gray-600 line-clamp-2">{r.actual_output}</p>
+                      : <span className="text-xs text-gray-300">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    {r.context && r.context.length > 0
+                      ? <span className="text-xs text-blue-600">{r.context.length} item(s)</span>
+                      : <span className="text-xs text-gray-300">—</span>}
+                  </td>
+                </tr>
+              )
+            })}
           </tbody>
         </table>
         {ds.records.length === 0 && (

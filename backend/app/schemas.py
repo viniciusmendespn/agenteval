@@ -23,12 +23,17 @@ class AgentOut(AgentCreate):
 
 # --- TestCase ---
 
+class Turn(BaseModel):
+    input: str
+    expected_output: Optional[str] = None
+
 class TestCaseCreate(BaseModel):
     title: str
     input: str
     expected_output: Optional[str] = None
     context: Optional[list[str]] = None
     tags: Optional[str] = None
+    turns: Optional[list[Turn]] = None  # None = single-turn (backward compat)
 
 class TestCaseOut(TestCaseCreate):
     id: int
@@ -95,6 +100,7 @@ class TestResultOut(BaseModel):
     reasons: dict = {}
     passed: Optional[bool]
     error: Optional[str]
+    turns_executed: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -129,6 +135,8 @@ class DatasetRecordOut(BaseModel):
     input: str
     actual_output: Optional[str]
     context: Optional[list[str]]
+    session_id: Optional[str] = None
+    turn_order: Optional[int] = None
     created_at: datetime
 
     class Config:

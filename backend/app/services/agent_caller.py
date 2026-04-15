@@ -5,6 +5,7 @@ _SKIP_EVENTS = {"meta", "usage", "error", "ping"}
 _STOP_EVENTS = {"done"}
 
 _TOKEN = "__AGENTEVAL_MSG__"
+_SID_TOKEN = "__AGENTEVAL_SID__"
 
 
 def _resolve_path(data: dict, path: str) -> str:
@@ -22,17 +23,21 @@ def _resolve_path(data: dict, path: str) -> str:
     return str(current) if current is not None else ""
 
 
-def _build_payload(request_body_template: str, message: str) -> dict:
+def _build_payload(request_body_template: str, message: str, session_id: str = "") -> dict:
     """
-    Substitui {{message}} no template JSON pelo valor real da mensagem.
-    Faz a substituição APÓS o parse para garantir escaping correto.
+    Substitui {{message}} e {{sessionId}} no template JSON pelos valores reais.
+    Ambas as substituições ocorrem ANTES do json.loads para garantir escaping correto.
     """
-    body_str = request_body_template.replace("{{message}}", _TOKEN)
+    body_str = (
+        request_body_template
+        .replace("{{message}}", _TOKEN)
+        .replace("{{sessionId}}", _SID_TOKEN)
+    )
     parsed = json.loads(body_str)
 
     def replace_token(obj):
         if isinstance(obj, str):
-            return obj.replace(_TOKEN, message)
+            return obj.replace(_TOKEN, message).replace(_SID_TOKEN, session_id)
         if isinstance(obj, dict):
             return {k: replace_token(v) for k, v in obj.items()}
         if isinstance(obj, list):
@@ -42,9 +47,9 @@ def _build_payload(request_body_template: str, message: str) -> dict:
     return replace_token(parsed)
 
 
-def _call_http(url: str, api_key: str, message: str, request_body: str, output_field: str, timeout: int) -> str:
+def _call_http(url: str, api_key: str, message: str, request_body: str, output_field: str, timeout: int, session_id: str = "") -> str:
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = _build_payload(request_body, message)
+    payload = _build_payload(request_body, message, session_id)
 
     response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
     response.raise_for_status()
@@ -53,13 +58,13 @@ def _call_http(url: str, api_key: str, message: str, request_body: str, output_f
     return _resolve_path(data, output_field)
 
 
-def _call_sse(url: str, api_key: str, message: str, request_body: str, output_field: str, timeout: int) -> str:
+def _call_sse(url: str, api_key: str, message: str, request_body: str, output_field: str, timeout: int, session_id: str = "") -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
     }
-    payload = _build_payload(request_body, message)
+    payload = _build_payload(request_body, message, session_id)
     chunks: list[str] = []
     current_event: str | None = None
 
@@ -106,7 +111,8 @@ def call_agent(
     output_field: str = "response",
     connection_type: str = "http",
     timeout: int = 60,
+    session_id: str = "",
 ) -> str:
     if connection_type == "sse":
-        return _call_sse(url, api_key, message, request_body, output_field, timeout)
-    return _call_http(url, api_key, message, request_body, output_field, timeout)
+        return _call_sse(url, api_key, message, request_body, output_field, timeout, session_id)
+    return _call_http(url, api_key, message, request_body, output_field, timeout, session_id)

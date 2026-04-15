@@ -1,4 +1,5 @@
 import time
+import uuid
 from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -130,57 +131,103 @@ def _execute_run(run_id: int):
         db.close()
 
 
-def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationProfile) -> TestResult:
-    try:
-        t0 = time.time()
-        actual_output = call_agent(
-            url=agent.url,
-            api_key=agent.api_key,
-            message=tc.input,
-            request_body=agent.request_body or '{"message": "{{message}}"}',
-            output_field=agent.output_field,
-            connection_type=agent.connection_type,
-        )
-        response_time_ms = (time.time() - t0) * 1000
+def _build_thresholds(profile: EvaluationProfile) -> dict:
+    return {
+        "relevancy":      profile.relevancy_threshold,
+        "hallucination":  profile.hallucination_threshold,
+        "toxicity":       getattr(profile, "toxicity_threshold", 0.5),
+        "bias":           getattr(profile, "bias_threshold", 0.5),
+        "faithfulness":   getattr(profile, "faithfulness_threshold", 0.5),
+        "latency":        0.5,
+        "non_advice":     getattr(profile, "non_advice_threshold", 0.5),
+        "role_violation": getattr(profile, "role_violation_threshold", 0.5),
+        **{f"criterion_{i}": 0.5 for i in range(len(profile.criteria or []))},
+    }
 
-        scores, reasons = evaluate_response(
-            input_text=tc.input,
-            actual_output=actual_output,
-            expected_output=tc.expected_output,
-            context=tc.context,
-            response_time_ms=response_time_ms,
-            use_relevancy=profile.use_relevancy,
-            relevancy_threshold=profile.relevancy_threshold,
-            use_hallucination=profile.use_hallucination,
-            hallucination_threshold=profile.hallucination_threshold,
-            use_toxicity=getattr(profile, "use_toxicity", False),
-            toxicity_threshold=getattr(profile, "toxicity_threshold", 0.5),
-            use_bias=getattr(profile, "use_bias", False),
-            bias_threshold=getattr(profile, "bias_threshold", 0.5),
-            use_faithfulness=getattr(profile, "use_faithfulness", False),
-            faithfulness_threshold=getattr(profile, "faithfulness_threshold", 0.5),
-            use_latency=getattr(profile, "use_latency", False),
-            latency_threshold_ms=getattr(profile, "latency_threshold_ms", 5000),
-            criteria=profile.criteria or [],
-            use_non_advice=getattr(profile, "use_non_advice", False),
-            non_advice_threshold=getattr(profile, "non_advice_threshold", 0.5),
-            non_advice_types=getattr(profile, "non_advice_types", None) or [],
-            use_role_violation=getattr(profile, "use_role_violation", False),
-            role_violation_threshold=getattr(profile, "role_violation_threshold", 0.5),
-            role_violation_role=getattr(profile, "role_violation_role", None) or "",
-        )
-        thresholds = {
-            "relevancy":      profile.relevancy_threshold,
-            "hallucination":  profile.hallucination_threshold,
-            "toxicity":       getattr(profile, "toxicity_threshold", 0.5),
-            "bias":           getattr(profile, "bias_threshold", 0.5),
-            "faithfulness":   getattr(profile, "faithfulness_threshold", 0.5),
-            "latency":        0.5,
-            "non_advice":     getattr(profile, "non_advice_threshold", 0.5),
-            "role_violation": getattr(profile, "role_violation_threshold", 0.5),
-            **{f"criterion_{i}": 0.5 for i in range(len(profile.criteria or []))},
-        }
-        passed = compute_passed(scores, thresholds) if scores else True
-        return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=actual_output, scores=scores, reasons=reasons, passed=passed)
+
+def _call_evaluate(input_text, actual_output, expected_output, context, response_time_ms, profile):
+    return evaluate_response(
+        input_text=input_text,
+        actual_output=actual_output,
+        expected_output=expected_output,
+        context=context,
+        response_time_ms=response_time_ms,
+        use_relevancy=profile.use_relevancy,
+        relevancy_threshold=profile.relevancy_threshold,
+        use_hallucination=profile.use_hallucination,
+        hallucination_threshold=profile.hallucination_threshold,
+        use_toxicity=getattr(profile, "use_toxicity", False),
+        toxicity_threshold=getattr(profile, "toxicity_threshold", 0.5),
+        use_bias=getattr(profile, "use_bias", False),
+        bias_threshold=getattr(profile, "bias_threshold", 0.5),
+        use_faithfulness=getattr(profile, "use_faithfulness", False),
+        faithfulness_threshold=getattr(profile, "faithfulness_threshold", 0.5),
+        use_latency=getattr(profile, "use_latency", False),
+        latency_threshold_ms=getattr(profile, "latency_threshold_ms", 5000),
+        criteria=profile.criteria or [],
+        use_non_advice=getattr(profile, "use_non_advice", False),
+        non_advice_threshold=getattr(profile, "non_advice_threshold", 0.5),
+        non_advice_types=getattr(profile, "non_advice_types", None) or [],
+        use_role_violation=getattr(profile, "use_role_violation", False),
+        role_violation_threshold=getattr(profile, "role_violation_threshold", 0.5),
+        role_violation_role=getattr(profile, "role_violation_role", None) or "",
+    )
+
+
+def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationProfile) -> TestResult:
+    session_id = str(uuid.uuid4())
+    turns = tc.turns if (tc.turns and len(tc.turns) > 0) else None
+
+    try:
+        if turns is None:
+            # ── Single-turn (comportamento atual preservado) ──
+            t0 = time.time()
+            actual_output = call_agent(
+                url=agent.url,
+                api_key=agent.api_key,
+                message=tc.input,
+                request_body=agent.request_body or '{"message": "{{message}}"}',
+                output_field=agent.output_field,
+                connection_type=agent.connection_type,
+                session_id=session_id,
+            )
+            response_time_ms = (time.time() - t0) * 1000
+            scores, reasons = _call_evaluate(tc.input, actual_output, tc.expected_output, tc.context, response_time_ms, profile)
+            thresholds = _build_thresholds(profile)
+            passed = compute_passed(scores, thresholds) if scores else True
+            return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=actual_output,
+                              scores=scores, reasons=reasons, passed=passed, turns_executed=1)
+        else:
+            # ── Multi-turn: cada turno envia o mesmo session_id ao agente ──
+            last_output = last_input = last_expected = None
+            total_time_ms = 0.0
+            for i, turn in enumerate(turns):
+                t0 = time.time()
+                try:
+                    output = call_agent(
+                        url=agent.url,
+                        api_key=agent.api_key,
+                        message=turn["input"],
+                        request_body=agent.request_body or '{"message": "{{message}}"}',
+                        output_field=agent.output_field,
+                        connection_type=agent.connection_type,
+                        session_id=session_id,
+                    )
+                except Exception as e:
+                    return TestResult(run_id=run_id, test_case_id=tc.id,
+                                      passed=False, error=f"Turno {i + 1}: {e}",
+                                      turns_executed=i + 1)
+                total_time_ms += (time.time() - t0) * 1000
+                last_output = output
+                last_input = turn["input"]
+                last_expected = turn.get("expected_output")
+
+            # Avalia apenas o último turno (sinal de qualidade final)
+            scores, reasons = _call_evaluate(last_input, last_output, last_expected, tc.context, total_time_ms, profile)
+            thresholds = _build_thresholds(profile)
+            passed = compute_passed(scores, thresholds) if scores else True
+            return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=last_output,
+                              scores=scores, reasons=reasons, passed=passed, turns_executed=len(turns))
+
     except Exception as e:
         return TestResult(run_id=run_id, test_case_id=tc.id, passed=False, error=str(e))

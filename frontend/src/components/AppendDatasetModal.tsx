@@ -26,6 +26,8 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
   const [outputPath, setOutputPath] = useState("")
   const [contextPaths, setContextPaths] = useState<string[]>([])
   const [manualContext, setManualContext] = useState("")
+  const [sessionIdPath, setSessionIdPath] = useState("")
+  const [orderPath, setOrderPath] = useState("")
 
   // Confirm step
   const [appended, setAppended] = useState<number | null>(null)
@@ -39,6 +41,8 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
       setInputPath(result.suggestion.input_path ?? "")
       setOutputPath(result.suggestion.output_path ?? "")
       setContextPaths(result.suggestion.context_paths ?? [])
+      setSessionIdPath(result.suggestion.session_id_path ?? "")
+      setOrderPath(result.suggestion.order_path ?? "")
       setStep("mapping")
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erro ao analisar arquivo")
@@ -59,6 +63,8 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
         output_path: outputPath || undefined,
         context_paths: contextPaths,
         manual_context: manualContext.trim() || undefined,
+        session_id_path: sessionIdPath || undefined,
+        order_path: orderPath || undefined,
       })
       setAppended(result.appended)
       setStep("confirm")
@@ -169,6 +175,40 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Nenhum</option>
+                  {analysis.all_paths.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Session ID path */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Session ID <span className="text-gray-400">(opcional)</span>
+                </label>
+                <select
+                  value={sessionIdPath}
+                  onChange={e => setSessionIdPath(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— não importar —</option>
+                  {analysis.all_paths.map(p => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Order path */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Ordenação <span className="text-gray-400">(opcional)</span>
+                </label>
+                <select
+                  value={orderPath}
+                  onChange={e => setOrderPath(e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— não importar —</option>
                   {analysis.all_paths.map(p => (
                     <option key={p} value={p}>{p}</option>
                   ))}

@@ -255,7 +255,14 @@ export default function RunPage() {
                   "hover:bg-gray-50/50 transition-colors"
                 )}>
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-800">{tc?.title ?? `Caso #${tcId}`}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium text-gray-800">{tc?.title ?? `Caso #${tcId}`}</p>
+                      {result?.turns_executed != null && result.turns_executed > 1 && (
+                        <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">
+                          {result.turns_executed} turnos
+                        </span>
+                      )}
+                    </div>
                     {tc && <p className="text-xs text-gray-400 line-clamp-1 mt-0.5">{tc.input}</p>}
                   </td>
                   <td className="px-4 py-3">

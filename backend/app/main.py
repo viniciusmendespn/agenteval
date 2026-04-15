@@ -44,6 +44,24 @@ def _migrate():
             table_cols = {c["name"] for c in insp.get_columns(table)}
             if "workspace_id" not in table_cols:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN workspace_id INTEGER DEFAULT 1 NOT NULL"))
+
+        # test_cases: suporte a multi-turn
+        tc_cols = {c["name"] for c in insp.get_columns("test_cases")}
+        if "turns" not in tc_cols:
+            conn.execute(text("ALTER TABLE test_cases ADD COLUMN turns JSON"))
+
+        # test_results: contagem de turnos executados
+        tr_cols = {c["name"] for c in insp.get_columns("test_results")}
+        if "turns_executed" not in tr_cols:
+            conn.execute(text("ALTER TABLE test_results ADD COLUMN turns_executed INTEGER"))
+
+        # dataset_records: agrupamento por sessão
+        dr_cols = {c["name"] for c in insp.get_columns("dataset_records")}
+        if "session_id" not in dr_cols:
+            conn.execute(text("ALTER TABLE dataset_records ADD COLUMN session_id TEXT"))
+        if "turn_order" not in dr_cols:
+            conn.execute(text("ALTER TABLE dataset_records ADD COLUMN turn_order INTEGER"))
+
         conn.commit()
 
 _migrate()
