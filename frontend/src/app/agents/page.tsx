@@ -1,33 +1,52 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { getAgents } from "@/lib/api"
+import { Bot, Plus } from "lucide-react"
+import { getAgents, type Agent } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
+import { TableSkeleton } from "@/components/Skeleton"
 
-export const dynamic = "force-dynamic"
+export default function AgentsPage() {
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [loading, setLoading] = useState(true)
 
-export default async function AgentsPage() {
-  let agents = []
-  try { agents = await getAgents() } catch {}
+  useEffect(() => {
+    getAgents()
+      .then(setAgents)
+      .catch(() => setAgents([]))
+      .finally(() => setLoading(false))
+  }, [])
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Agentes</h1>
+      <div className="flame-page-header">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Agentes</h1>
+          <p className="mt-1 text-sm text-gray-500">Endpoints e modelos disponíveis neste workspace.</p>
+        </div>
         <Link
           href="/agents/new"
-          className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700"
+          className="flame-button"
         >
-          + Novo agente
+          <Plus className="h-4 w-4" />
+          Novo agente
         </Link>
       </div>
 
-      {agents.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center text-gray-400">
-          Nenhum agente cadastrado ainda.
+      {loading ? (
+        <TableSkeleton columns={6} rows={6} />
+      ) : agents.length === 0 ? (
+        <div className="flame-empty">
+          <div className="flame-icon-shell mx-auto mb-3 h-10 w-10">
+            <Bot className="h-5 w-5 text-red-600" />
+          </div>
+          <p className="text-sm font-semibold text-gray-700">Nenhum agente cadastrado ainda.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+        <div className="flame-panel overflow-hidden">
+          <table className="flame-table">
+            <thead>
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Nome</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Tipo</th>
@@ -42,11 +61,7 @@ export default async function AgentsPage() {
                 <tr key={a.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{a.name || <span className="text-gray-400 italic">sem nome</span>}</td>
                   <td className="px-4 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${
-                      a.connection_type === "sse"
-                        ? "bg-purple-100 text-purple-700"
-                        : "bg-blue-100 text-blue-700"
-                    }`}>
+                    <span className="flame-chip">
                       {(a.connection_type || "http").toUpperCase()}
                     </span>
                   </td>
@@ -57,7 +72,7 @@ export default async function AgentsPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
-                      <Link href={`/agents/${a.id}/edit`} className="text-xs text-blue-500 hover:underline">
+                      <Link href={`/agents/${a.id}/edit`} className="flame-link-action">
                         Editar
                       </Link>
                       <DeleteButton id={a.id} path="/agents" />

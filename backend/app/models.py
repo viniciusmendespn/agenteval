@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -8,6 +8,7 @@ class Agent(Base):
     __tablename__ = "agents"
 
     id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
     name = Column(String, nullable=False)
     url = Column(String, nullable=False)
     api_key = Column(String, nullable=False)
@@ -23,6 +24,7 @@ class TestCase(Base):
     __tablename__ = "test_cases"
 
     id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
     title = Column(String, nullable=False)
     input = Column(Text, nullable=False)
     expected_output = Column(Text, nullable=True)
@@ -35,6 +37,7 @@ class EvaluationProfile(Base):
     __tablename__ = "evaluation_profiles"
 
     id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
     name = Column(String, nullable=False)
     use_relevancy = Column(Boolean, default=True)
     relevancy_threshold = Column(Float, default=0.5)
@@ -49,6 +52,12 @@ class EvaluationProfile(Base):
     use_latency = Column(Boolean, default=False)
     latency_threshold_ms = Column(Integer, default=5000)
     criteria = Column(JSON, default=list)
+    use_non_advice = Column(Boolean, default=False)
+    non_advice_threshold = Column(Float, default=0.5)
+    non_advice_types = Column(JSON, default=list)
+    use_role_violation = Column(Boolean, default=False)
+    role_violation_threshold = Column(Float, default=0.5)
+    role_violation_role = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -56,6 +65,7 @@ class TestRun(Base):
     __tablename__ = "test_runs"
 
     id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
     profile_id = Column(Integer, ForeignKey("evaluation_profiles.id"), nullable=False)
     test_case_ids = Column(JSON, nullable=False)
@@ -94,6 +104,7 @@ class Dataset(Base):
     __tablename__ = "datasets"
 
     id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -119,6 +130,7 @@ class DatasetEvaluation(Base):
     __tablename__ = "dataset_evaluations"
 
     id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=False)
     profile_id = Column(Integer, ForeignKey("evaluation_profiles.id"), nullable=False)
     status = Column(String, default="pending")
@@ -145,3 +157,37 @@ class DatasetResult(Base):
 
     evaluation = relationship("DatasetEvaluation", back_populates="results")
     record = relationship("DatasetRecord")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String, unique=True, nullable=False, index=True)
+    name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    slug = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class WorkspaceMember(Base):
+    __tablename__ = "workspace_members"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    role = Column(String, default="member", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    workspace = relationship("Workspace")
+    user = relationship("User")

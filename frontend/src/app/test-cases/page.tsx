@@ -1,48 +1,69 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { getTestCases } from "@/lib/api"
+import { FlaskConical, Plus } from "lucide-react"
+import { getTestCases, type TestCase } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
+import { ListSkeleton } from "@/components/Skeleton"
 
-export const dynamic = "force-dynamic"
+export default function TestCasesPage() {
+  const [cases, setCases] = useState<TestCase[]>([])
+  const [loading, setLoading] = useState(true)
 
-export default async function TestCasesPage() {
-  let cases = []
-  try { cases = await getTestCases() } catch {}
+  useEffect(() => {
+    getTestCases()
+      .then(setCases)
+      .catch(() => setCases([]))
+      .finally(() => setLoading(false))
+  }, [])
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Casos de Teste</h1>
-        <Link href="/test-cases/new"
-          className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">
-          + Novo caso
+      <div className="flame-page-header">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Casos de Teste</h1>
+          <p className="mt-1 text-sm text-gray-500">Perguntas, expectativas e contextos deste workspace.</p>
+        </div>
+        <Link href="/test-cases/new" className="flame-button">
+          <Plus className="h-4 w-4" />
+          Novo caso
         </Link>
       </div>
 
-      {cases.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center text-gray-400">
-          Nenhum caso de teste criado ainda.
+      {loading ? (
+        <ListSkeleton rows={6} />
+      ) : cases.length === 0 ? (
+        <div className="flame-empty">
+          <div className="flame-icon-shell mx-auto mb-3 h-10 w-10">
+            <FlaskConical className="h-5 w-5 text-red-600" />
+          </div>
+          <p className="text-sm font-semibold text-gray-700">Nenhum caso de teste criado ainda.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {cases.map((tc) => (
-            <div key={tc.id} className="bg-white rounded-lg border border-gray-200 p-4 flex items-start justify-between gap-4">
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-gray-900">{tc.title}</p>
-                <p className="text-sm text-gray-500 mt-1 line-clamp-2">{tc.input}</p>
-                <div className="flex gap-2 mt-2 flex-wrap">
+            <div key={tc.id} className="flame-panel flex items-start justify-between gap-4 p-4">
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-gray-900">{tc.title}</p>
+                <p className="mt-1 line-clamp-2 text-sm text-gray-500">{tc.input}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
                   {tc.expected_output && (
-                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">resposta esperada</span>
+                    <span className="flame-chip">resposta esperada</span>
                   )}
                   {tc.context && tc.context.length > 0 && (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">{tc.context.length} contexto(s)</span>
+                    <span className="flame-chip">{tc.context.length} contexto(s)</span>
                   )}
-                  {tc.tags && tc.tags.split(",").map((t) => (
-                    <span key={t} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{t.trim()}</span>
-                  ))}
+                  {tc.tags && tc.tags.split(",").map((tag) => {
+                    const label = tag.trim()
+                    return label ? (
+                      <span key={label} className="flame-chip">{label}</span>
+                    ) : null
+                  })}
                 </div>
               </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <Link href={`/test-cases/${tc.id}/edit`} className="text-xs text-blue-500 hover:underline">
+              <div className="flex shrink-0 items-center gap-3">
+                <Link href={`/test-cases/${tc.id}/edit`} className="flame-link-action">
                   Editar
                 </Link>
                 <DeleteButton id={tc.id} path="/test-cases" />

@@ -1,24 +1,27 @@
 "use client"
+
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  LayoutDashboard,
-  Bot,
-  FlaskConical,
-  Database,
-  SlidersHorizontal,
-  Play,
-  GitCompare,
   BarChart2,
+  Bot,
+  Database,
+  FlaskConical,
+  GitCompare,
+  LayoutDashboard,
+  Play,
+  Settings,
+  SlidersHorizontal,
   TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
+import WorkspaceSwitcher from "./WorkspaceSwitcher"
 
 const sections = [
   {
-    label: "Visão Geral",
+    label: "Visão geral",
     items: [
-      { href: "/",        label: "Dashboard",           icon: LayoutDashboard, exact: true },
+      { href: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { href: "/evolution", label: "Evolução", icon: TrendingUp },
       { href: "/runs/compare", label: "Comparar Runs", icon: GitCompare },
     ],
@@ -26,22 +29,23 @@ const sections = [
   {
     label: "Configuração",
     items: [
-      { href: "/agents",   label: "Agentes",             icon: Bot },
+      { href: "/agents", label: "Agentes", icon: Bot },
       { href: "/profiles", label: "Perfis de Avaliação", icon: SlidersHorizontal },
+      { href: "/settings/workspaces", label: "Configurações", icon: Settings },
     ],
   },
   {
     label: "Testes",
     items: [
-      { href: "/test-cases", label: "Casos de Teste",  icon: FlaskConical },
-      { href: "/runs",       label: "Execuções",        icon: Play },
+      { href: "/test-cases", label: "Casos de Teste", icon: FlaskConical },
+      { href: "/runs", label: "Execuções", icon: Play },
     ],
   },
   {
-    label: "Dados de Produção",
+    label: "Dados de produção",
     items: [
-      { href: "/datasets",     label: "Datasets",               icon: Database },
-      { href: "/evaluations",  label: "Avaliações de Dataset",  icon: BarChart2 },
+      { href: "/datasets", label: "Datasets", icon: Database },
+      { href: "/evaluations", label: "Avaliações de Dataset", icon: BarChart2 },
     ],
   },
 ]
@@ -59,57 +63,60 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 h-full bg-white text-gray-900 flex flex-col border-r border-gray-200 shadow-santander">
-      {/* Branding */}
-      <Link href="/" className="px-5 py-5 border-b border-gray-200 hover:bg-blue-50 transition-colors">
-        <div className="flex items-center gap-2.5">
+    <aside className="flex h-full w-72 flex-col border-r border-gray-200 bg-white text-gray-900">
+      <Link href="/" className="border-b border-gray-200 px-5 py-5 transition-colors hover:bg-gray-50">
+        <div className="flex items-center gap-3">
           <img
             src="/logo-santander.png"
             alt="Santander"
             className="h-8 w-auto shrink-0"
           />
-          <div>
-            <span className="text-sm font-bold tracking-tight text-gray-950">Santander AgentEval</span>
-            <p className="text-xs text-gray-500 leading-tight">Plataforma de Avaliação</p>
+          <div className="min-w-0">
+            <span className="block truncate text-sm font-bold text-gray-950">AgentEval</span>
+            <p className="truncate text-xs leading-tight text-gray-500">Validação de agentes</p>
           </div>
         </div>
       </Link>
 
-      {/* Navegação */}
-      <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
-        {sections.map((section) => (
-          <div key={section.label}>
-            <p className="px-3 mb-1.5 text-xs font-semibold text-gray-500 uppercase tracking-normal">
-              {section.label}
-            </p>
-            <div className="space-y-0.5">
-              {section.items.map((item) => {
-                const active = isActive(item.href, item.exact)
-                const Icon = item.icon
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                      active
-                        ? "bg-blue-600 text-white shadow-sm"
-                        : "text-gray-600 hover:bg-blue-50 hover:text-blue-700"
-                    )}
-                  >
-                    <Icon className={cn("w-4 h-4 shrink-0", active ? "text-white" : "text-blue-600")} />
-                    {item.label}
-                  </Link>
-                )
-              })}
+      <nav className="flex-1 overflow-y-auto px-3 py-4">
+        <WorkspaceSwitcher />
+        <div className="mt-5 space-y-5">
+          {sections.map((section) => (
+            <div key={section.label}>
+              <p className="px-3 pb-2 text-xs font-bold uppercase text-gray-500">
+                {section.label}
+              </p>
+              <div className="space-y-1">
+                {section.items.map((item) => {
+                  const active = isActive(item.href, item.exact)
+                  const Icon = item.icon
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={cn(
+                        "relative flex min-h-10 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors",
+                        active
+                          ? "bg-white text-red-700"
+                          : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      )}
+                    >
+                      {active && (
+                        <span className="absolute left-0 top-2 h-6 w-0.5 rounded-full bg-red-600" />
+                      )}
+                      <Icon className="h-4 w-4 shrink-0 text-red-600" />
+                      <span className="truncate">{item.label}</span>
+                    </Link>
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </nav>
 
-      {/* Rodapé */}
-      <div className="px-5 py-3 border-t border-gray-200">
-        <p className="text-xs text-gray-500">Santander Flame UI - v0.2.0</p>
+      <div className="border-t border-gray-200 px-5 py-3">
+        <p className="text-xs text-gray-500">Flame UI - v0.3.0</p>
       </div>
     </aside>
   )

@@ -6,7 +6,7 @@ from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 from .judge_llm import get_judge
 
 # Métricas onde score menor = melhor (ausência do problema)
-LOWER_IS_BETTER = {"hallucination", "toxicity", "bias"}
+LOWER_IS_BETTER = {"hallucination", "toxicity", "bias", "non_advice", "role_violation"}
 
 
 def compute_passed(scores: dict[str, float], thresholds: dict[str, float]) -> bool:
@@ -81,6 +81,18 @@ try:
 except ImportError:
     _HAS_FAITHFULNESS = False
 
+try:
+    from deepeval.metrics import NonAdviceMetric
+    _HAS_NON_ADVICE = True
+except ImportError:
+    _HAS_NON_ADVICE = False
+
+try:
+    from deepeval.metrics import RoleViolationMetric
+    _HAS_ROLE_VIOLATION = True
+except ImportError:
+    _HAS_ROLE_VIOLATION = False
+
 
 def evaluate_response(
     input_text: str,
@@ -104,6 +116,13 @@ def evaluate_response(
     latency_threshold_ms: int = 5000,
     # critérios custom
     criteria: list[str] | None = None,
+    # novas métricas de conformidade
+    use_non_advice: bool = False,
+    non_advice_threshold: float = 0.5,
+    non_advice_types: list[str] | None = None,
+    use_role_violation: bool = False,
+    role_violation_threshold: float = 0.5,
+    role_violation_role: str | None = None,
 ) -> tuple[dict[str, float], dict[str, str]]:
     """
     Avalia uma resposta do agente usando DeepEval.
@@ -172,6 +191,30 @@ def evaluate_response(
             f"Tempo de resposta: {int(response_time_ms)}ms "
             f"(limiar: {latency_threshold_ms}ms)"
         )
+
+    if use_non_advice and _HAS_NON_ADVICE and non_advice_types:
+        metric = NonAdviceMetric(
+            advice_types=non_advice_types,
+            threshold=non_advice_threshold,
+            model=judge,
+        )
+        metric.measure(test_case)
+        scores["non_advice"] = round(metric.score or 0.0, 4)
+        reasons["non_advice"] = metric.reason or ""
+    elif use_non_advice and not non_advice_types:
+        reasons["non_advice"] = "NonAdviceMetric requer ao menos um tipo de conselho configurado"
+
+    if use_role_violation and _HAS_ROLE_VIOLATION and role_violation_role:
+        metric = RoleViolationMetric(
+            role=role_violation_role,
+            threshold=role_violation_threshold,
+            model=judge,
+        )
+        metric.measure(test_case)
+        scores["role_violation"] = round(metric.score or 0.0, 4)
+        reasons["role_violation"] = metric.reason or ""
+    elif use_role_violation and not role_violation_role:
+        reasons["role_violation"] = "RoleViolationMetric requer o papel do agente configurado"
 
     for i, criterion in enumerate(criteria or []):
         key = f"criterion_{i}"

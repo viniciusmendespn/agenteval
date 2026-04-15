@@ -13,41 +13,21 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Agent, EvaluationProfile, TestCase, TestRun
 from .runs import _execute_run
+from ..workspace import WorkspaceContext, get_current_workspace
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 # ── System prompt ────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Você é o assistente do AgentEval, uma plataforma de avaliação contínua de agentes de IA.
-Você ajuda o usuário a gerenciar e monitorar agentes, e fala sempre em português brasileiro.
+SYSTEM_PROMPT = """Você é o assistente do AgentEval. Responda SEMPRE em português, de forma direta e curta.
 
-## O que você pode fazer
-- Consultar o estado geral do sistema (overview)
-- Listar e criar agentes, perfis de avaliação e casos de teste
-- Iniciar execuções de avaliação
-- Consultar histórico e evolução de um agente
-
-## Entidades do sistema
-
-**Agente**: um endpoint HTTP/SSE que recebe mensagens e retorna respostas.
-  - Precisa de: nome, URL, api_key (pode ser vazia), connection_type (http ou sse), request_body (template JSON com {{message}}), output_field (caminho para extrair a resposta)
-
-**Perfil de Avaliação**: define quais métricas serão usadas e seus limiares.
-  - Métricas disponíveis: relevancy (padrão ON), hallucination, toxicity, bias, faithfulness, latency
-  - hallucination, toxicity e bias são lower-is-better (score 0 = ótimo, score 1 = péssimo)
-  - limiares ficam entre 0.0 e 1.0 (exceto latency em milissegundos)
-
-**Caso de Teste**: um input que será enviado ao agente para avaliação.
-  - Tem: title, input (mensagem), expected_output (opcional), context (lista de strings, opcional)
-
-**Execução (Run)**: aplica um perfil de avaliação sobre um conjunto de casos de teste usando um agente.
-  - Roda em background e gera scores por métrica para cada caso
-
-## Regras importantes
-- Sempre confirme com o usuário antes de criar ou iniciar algo, a menos que ele já tenha dado todos os dados
-- Ao listar recursos existentes antes de criar novos, ajude o usuário a evitar duplicatas
-- Scores são exibidos de 0 a 1 (ou 0% a 100% no frontend)
-- overall_score de uma run é a média bruta dos scores individuais
+Regras:
+- Respostas curtas. Sem introduções, sem resumos finais, sem listas longas desnecessárias.
+- Se faltar informação para criar algo, assuma valores sensatos e execute sem perguntar.
+- Defaults ao criar agente: connection_type=http, request_body={"message":"{{message}}"}, output_field=response, api_key="".
+- Defaults ao criar perfil: relevancy ON (threshold 0.7), demais métricas OFF.
+- Defaults ao criar caso de teste: expected_output e context vazios.
+- hallucination/toxicity/bias: score 0 = ótimo, score 1 = péssimo.
 """
 
 # ── Definição das tools ───────────────────────────────────────────────────────
@@ -196,56 +176,57 @@ TOOLS = [
 
 # ── Implementação das tools ───────────────────────────────────────────────────
 
-def _run_tool(name: str, args: dict, db: Session) -> str:
+def _run_tool(name: str, args: dict, db: Session, workspace_id: int) -> str:
     try:
         if name == "get_overview":
-            return _tool_get_overview(db)
+            return _tool_get_overview(db, workspace_id)
         if name == "list_agents":
-            return _tool_list_agents(db)
+            return _tool_list_agents(db, workspace_id)
         if name == "create_agent":
-            return _tool_create_agent(args, db)
+            return _tool_create_agent(args, db, workspace_id)
         if name == "list_profiles":
-            return _tool_list_profiles(db)
+            return _tool_list_profiles(db, workspace_id)
         if name == "create_profile":
-            return _tool_create_profile(args, db)
+            return _tool_create_profile(args, db, workspace_id)
         if name == "list_test_cases":
-            return _tool_list_test_cases(db)
+            return _tool_list_test_cases(db, workspace_id)
         if name == "create_test_case":
-            return _tool_create_test_case(args, db)
+            return _tool_create_test_case(args, db, workspace_id)
         if name == "start_run":
-            return _tool_start_run(args, db)
+            return _tool_start_run(args, db, workspace_id)
         if name == "list_runs":
-            return _tool_list_runs(args, db)
+            return _tool_list_runs(args, db, workspace_id)
         if name == "get_agent_timeline":
-            return _tool_get_agent_timeline(args, db)
+            return _tool_get_agent_timeline(args, db, workspace_id)
         return f"Tool desconhecida: {name}"
     except Exception as e:
         return f"Erro ao executar {name}: {str(e)}"
 
 
-def _tool_get_overview(db: Session) -> str:
+def _tool_get_overview(db: Session, workspace_id: int) -> str:
     from sqlalchemy import func
     from ..models import TestResult, Dataset
-    agents = db.query(func.count(Agent.id)).scalar()
-    test_cases = db.query(func.count(TestCase.id)).scalar()
-    runs = db.query(func.count(TestRun.id)).scalar()
-    datasets = db.query(func.count(Dataset.id)).scalar()
+    agents = db.query(func.count(Agent.id)).filter(Agent.workspace_id == workspace_id).scalar()
+    test_cases = db.query(func.count(TestCase.id)).filter(TestCase.workspace_id == workspace_id).scalar()
+    runs = db.query(func.count(TestRun.id)).filter(TestRun.workspace_id == workspace_id).scalar()
+    datasets = db.query(func.count(Dataset.id)).filter(Dataset.workspace_id == workspace_id).scalar()
 
     completed = db.query(TestRun).filter(
-        TestRun.status == "completed", TestRun.overall_score.isnot(None)
+        TestRun.workspace_id == workspace_id, TestRun.status == "completed", TestRun.overall_score.isnot(None)
     ).order_by(TestRun.created_at.desc()).limit(5).all()
 
     scores = [r.overall_score for r in completed if r.overall_score is not None]
     avg = round(sum(scores) / len(scores), 4) if scores else None
 
-    total_results = db.query(func.count(TestResult.id)).scalar() or 0
-    passed_results = db.query(func.count(TestResult.id)).filter(TestResult.passed == True).scalar() or 0
+    run_ids = [r.id for r in db.query(TestRun.id).filter(TestRun.workspace_id == workspace_id).all()]
+    total_results = db.query(func.count(TestResult.id)).filter(TestResult.run_id.in_(run_ids)).scalar() or 0
+    passed_results = db.query(func.count(TestResult.id)).filter(TestResult.run_id.in_(run_ids), TestResult.passed == True).scalar() or 0
     pass_rate = round(passed_results / total_results * 100, 1) if total_results > 0 else None
 
-    agent_names = {a.id: a.name for a in db.query(Agent).all()}
+    agent_names = {a.id: a.name for a in db.query(Agent).filter(Agent.workspace_id == workspace_id).all()}
     recent = [
         f"Run #{r.id} — {agent_names.get(r.agent_id, '?')} — {r.status} — score: {r.overall_score}"
-        for r in db.query(TestRun).order_by(TestRun.created_at.desc()).limit(3).all()
+        for r in db.query(TestRun).filter(TestRun.workspace_id == workspace_id).order_by(TestRun.created_at.desc()).limit(3).all()
     ]
 
     return json.dumps({
@@ -256,8 +237,8 @@ def _tool_get_overview(db: Session) -> str:
     }, ensure_ascii=False)
 
 
-def _tool_list_agents(db: Session) -> str:
-    agents = db.query(Agent).all()
+def _tool_list_agents(db: Session, workspace_id: int) -> str:
+    agents = db.query(Agent).filter(Agent.workspace_id == workspace_id).all()
     if not agents:
         return "Nenhum agente cadastrado."
     return json.dumps(
@@ -266,7 +247,7 @@ def _tool_list_agents(db: Session) -> str:
     )
 
 
-def _tool_create_agent(args: dict, db: Session) -> str:
+def _tool_create_agent(args: dict, db: Session, workspace_id: int) -> str:
     agent = Agent(
         name=args["name"],
         url=args["url"],
@@ -274,6 +255,7 @@ def _tool_create_agent(args: dict, db: Session) -> str:
         connection_type=args.get("connection_type", "http"),
         request_body=args.get("request_body", '{"message": "{{message}}"}'),
         output_field=args.get("output_field", "response"),
+        workspace_id=workspace_id,
     )
     db.add(agent)
     db.commit()
@@ -281,8 +263,8 @@ def _tool_create_agent(args: dict, db: Session) -> str:
     return json.dumps({"id": agent.id, "nome": agent.name, "url": agent.url}, ensure_ascii=False)
 
 
-def _tool_list_profiles(db: Session) -> str:
-    profiles = db.query(EvaluationProfile).all()
+def _tool_list_profiles(db: Session, workspace_id: int) -> str:
+    profiles = db.query(EvaluationProfile).filter(EvaluationProfile.workspace_id == workspace_id).all()
     if not profiles:
         return "Nenhum perfil cadastrado."
     result = []
@@ -298,7 +280,7 @@ def _tool_list_profiles(db: Session) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def _tool_create_profile(args: dict, db: Session) -> str:
+def _tool_create_profile(args: dict, db: Session, workspace_id: int) -> str:
     profile = EvaluationProfile(
         name=args["name"],
         use_relevancy=args.get("use_relevancy", True),
@@ -313,6 +295,7 @@ def _tool_create_profile(args: dict, db: Session) -> str:
         faithfulness_threshold=args.get("faithfulness_threshold", 0.7),
         use_latency=args.get("use_latency", False),
         latency_threshold_ms=args.get("latency_threshold_ms", 5000),
+        workspace_id=workspace_id,
     )
     db.add(profile)
     db.commit()
@@ -320,8 +303,8 @@ def _tool_create_profile(args: dict, db: Session) -> str:
     return json.dumps({"id": profile.id, "nome": profile.name}, ensure_ascii=False)
 
 
-def _tool_list_test_cases(db: Session) -> str:
-    cases = db.query(TestCase).all()
+def _tool_list_test_cases(db: Session, workspace_id: int) -> str:
+    cases = db.query(TestCase).filter(TestCase.workspace_id == workspace_id).all()
     if not cases:
         return "Nenhum caso de teste cadastrado."
     return json.dumps(
@@ -330,13 +313,14 @@ def _tool_list_test_cases(db: Session) -> str:
     )
 
 
-def _tool_create_test_case(args: dict, db: Session) -> str:
+def _tool_create_test_case(args: dict, db: Session, workspace_id: int) -> str:
     tc = TestCase(
         title=args["title"],
         input=args["input"],
         expected_output=args.get("expected_output"),
         context=args.get("context"),
         tags=args.get("tags"),
+        workspace_id=workspace_id,
     )
     db.add(tc)
     db.commit()
@@ -344,25 +328,37 @@ def _tool_create_test_case(args: dict, db: Session) -> str:
     return json.dumps({"id": tc.id, "titulo": tc.title}, ensure_ascii=False)
 
 
-def _tool_start_run(args: dict, db: Session) -> str:
-    agent = db.get(Agent, args["agent_id"])
+def _tool_start_run(args: dict, db: Session, workspace_id: int) -> str:
+    agent = db.query(Agent).filter(Agent.id == args["agent_id"], Agent.workspace_id == workspace_id).first()
     if not agent:
         return f"Agente ID {args['agent_id']} não encontrado."
-    profile = db.get(EvaluationProfile, args["profile_id"])
+    profile = db.query(EvaluationProfile).filter(
+        EvaluationProfile.id == args["profile_id"],
+        EvaluationProfile.workspace_id == workspace_id,
+    ).first()
     if not profile:
         return f"Perfil ID {args['profile_id']} não encontrado."
 
     tc_ids = args.get("test_case_ids")
     if not tc_ids:
-        tc_ids = [tc.id for tc in db.query(TestCase).all()]
+        tc_ids = [tc.id for tc in db.query(TestCase).filter(TestCase.workspace_id == workspace_id).all()]
     if not tc_ids:
         return "Nenhum caso de teste disponível para executar."
+    found_case_ids = {
+        tc.id for tc in db.query(TestCase).filter(
+            TestCase.id.in_(tc_ids),
+            TestCase.workspace_id == workspace_id,
+        ).all()
+    }
+    if len(found_case_ids) != len(set(tc_ids)):
+        return "Um ou mais casos de teste não existem neste workspace."
 
     run = TestRun(
         agent_id=args["agent_id"],
         profile_id=args["profile_id"],
         test_case_ids=tc_ids,
         status="running",
+        workspace_id=workspace_id,
     )
     db.add(run)
     db.commit()
@@ -382,12 +378,12 @@ def _tool_start_run(args: dict, db: Session) -> str:
     }, ensure_ascii=False)
 
 
-def _tool_list_runs(args: dict, db: Session) -> str:
+def _tool_list_runs(args: dict, db: Session, workspace_id: int) -> str:
     limit = args.get("limit", 10)
-    runs = db.query(TestRun).order_by(TestRun.created_at.desc()).limit(limit).all()
+    runs = db.query(TestRun).filter(TestRun.workspace_id == workspace_id).order_by(TestRun.created_at.desc()).limit(limit).all()
     if not runs:
         return "Nenhuma execução encontrada."
-    agent_names = {a.id: a.name for a in db.query(Agent).all()}
+    agent_names = {a.id: a.name for a in db.query(Agent).filter(Agent.workspace_id == workspace_id).all()}
     return json.dumps(
         [
             {
@@ -404,16 +400,16 @@ def _tool_list_runs(args: dict, db: Session) -> str:
     )
 
 
-def _tool_get_agent_timeline(args: dict, db: Session) -> str:
+def _tool_get_agent_timeline(args: dict, db: Session, workspace_id: int) -> str:
     from ..services.evaluator import LOWER_IS_BETTER
-    agent = db.get(Agent, args["agent_id"])
+    agent = db.query(Agent).filter(Agent.id == args["agent_id"], Agent.workspace_id == workspace_id).first()
     if not agent:
         return f"Agente ID {args['agent_id']} não encontrado."
 
     from ..models import TestResult
     runs = (
         db.query(TestRun)
-        .filter(TestRun.agent_id == args["agent_id"], TestRun.status == "completed")
+        .filter(TestRun.workspace_id == workspace_id, TestRun.agent_id == args["agent_id"], TestRun.status == "completed")
         .order_by(TestRun.created_at.asc())
         .all()
     )
@@ -467,7 +463,11 @@ def _get_llm_client():
 
 
 @router.post("/", response_model=ChatResponse)
-def chat(body: ChatRequest, db: Session = Depends(get_db)):
+def chat(
+    body: ChatRequest,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     client = _get_llm_client()
     model = os.getenv("JUDGE_MODEL", "gpt-4")
 
@@ -491,7 +491,7 @@ def chat(body: ChatRequest, db: Session = Depends(get_db)):
             # Executa cada tool e devolve os resultados
             for tc in choice.message.tool_calls:
                 args = json.loads(tc.function.arguments)
-                result = _run_tool(tc.function.name, args, db)
+                result = _run_tool(tc.function.name, args, db, workspace.workspace_id)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,

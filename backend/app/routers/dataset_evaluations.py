@@ -4,24 +4,37 @@ from sqlalchemy.orm import Session
 from ..database import get_db, SessionLocal
 from ..models import Dataset, DatasetRecord, DatasetEvaluation, DatasetResult, EvaluationProfile
 from ..schemas import DatasetEvaluationCreate, DatasetEvaluationOut
-from ..services.evaluator import evaluate_response, compute_passed
+from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
+from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/datasets/{dataset_id}/evaluations", tags=["dataset-evaluations"])
 
 
 @router.get("/", response_model=list[DatasetEvaluationOut])
-def list_evaluations(dataset_id: int, db: Session = Depends(get_db)):
+def list_evaluations(dataset_id: int, db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
+    if not ds:
+        raise HTTPException(404, "Dataset nÃ£o encontrado")
     return (
         db.query(DatasetEvaluation)
-        .filter(DatasetEvaluation.dataset_id == dataset_id)
+        .filter(DatasetEvaluation.dataset_id == dataset_id, DatasetEvaluation.workspace_id == workspace.workspace_id)
         .order_by(DatasetEvaluation.created_at.desc())
         .all()
     )
 
 
 @router.get("/{eval_id}", response_model=DatasetEvaluationOut)
-def get_evaluation(dataset_id: int, eval_id: int, db: Session = Depends(get_db)):
-    ev = db.get(DatasetEvaluation, eval_id)
+def get_evaluation(
+    dataset_id: int,
+    eval_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    ev = db.query(DatasetEvaluation).filter(
+        DatasetEvaluation.id == eval_id,
+        DatasetEvaluation.dataset_id == dataset_id,
+        DatasetEvaluation.workspace_id == workspace.workspace_id,
+    ).first()
     if not ev or ev.dataset_id != dataset_id:
         raise HTTPException(404, "Avaliação não encontrada")
     return ev
@@ -33,12 +46,17 @@ def create_evaluation(
     data: DatasetEvaluationCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    ds = db.get(Dataset, dataset_id)
+    require_writer(workspace)
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
     if not ds:
         raise HTTPException(404, "Dataset não encontrado")
 
-    profile = db.get(EvaluationProfile, data.profile_id)
+    profile = db.query(EvaluationProfile).filter(
+        EvaluationProfile.id == data.profile_id,
+        EvaluationProfile.workspace_id == workspace.workspace_id,
+    ).first()
     if not profile:
         raise HTTPException(404, "Perfil de avaliação não encontrado")
 
@@ -50,6 +68,7 @@ def create_evaluation(
         dataset_id=dataset_id,
         profile_id=data.profile_id,
         status="running",
+        workspace_id=workspace.workspace_id,
     )
     db.add(ev)
     db.commit()
@@ -74,7 +93,9 @@ def _execute_evaluation(eval_id: int):
         for record in records:
             result = _evaluate_record(eval_id, record, profile)
             if result.scores:
-                all_scores.extend(result.scores.values())
+                for metric_name, score in result.scores.items():
+                    normalized = (1.0 - score) if metric_name in LOWER_IS_BETTER else score
+                    all_scores.append(normalized)
             db.add(result)
             db.commit()
 
@@ -116,14 +137,22 @@ def _evaluate_record(eval_id: int, record: DatasetRecord, profile: EvaluationPro
             use_faithfulness=getattr(profile, "use_faithfulness", False),
             faithfulness_threshold=getattr(profile, "faithfulness_threshold", 0.5),
             criteria=profile.criteria or [],
+            use_non_advice=getattr(profile, "use_non_advice", False),
+            non_advice_threshold=getattr(profile, "non_advice_threshold", 0.5),
+            non_advice_types=getattr(profile, "non_advice_types", None) or [],
+            use_role_violation=getattr(profile, "use_role_violation", False),
+            role_violation_threshold=getattr(profile, "role_violation_threshold", 0.5),
+            role_violation_role=getattr(profile, "role_violation_role", None) or "",
         )
         thresholds = {
-            "relevancy":    profile.relevancy_threshold,
-            "hallucination": profile.hallucination_threshold,
-            "toxicity":     getattr(profile, "toxicity_threshold", 0.5),
-            "bias":         getattr(profile, "bias_threshold", 0.5),
-            "faithfulness": getattr(profile, "faithfulness_threshold", 0.5),
-            "latency":      0.5,
+            "relevancy":      profile.relevancy_threshold,
+            "hallucination":  profile.hallucination_threshold,
+            "toxicity":       getattr(profile, "toxicity_threshold", 0.5),
+            "bias":           getattr(profile, "bias_threshold", 0.5),
+            "faithfulness":   getattr(profile, "faithfulness_threshold", 0.5),
+            "latency":        0.5,
+            "non_advice":     getattr(profile, "non_advice_threshold", 0.5),
+            "role_violation": getattr(profile, "role_violation_threshold", 0.5),
             **{f"criterion_{i}": 0.5 for i in range(len(profile.criteria or []))},
         }
         passed = compute_passed(scores, thresholds) if scores else True

@@ -2,11 +2,12 @@ import json
 import uuid
 from typing import Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Dataset, DatasetRecord
+from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 from ..services.importer import (
     extract_all_paths,
     load_tmp,
@@ -26,7 +27,8 @@ class MappingRequest(BaseModel):
     file_ids: list[str]
     input_path: str
     output_path: Optional[str] = None
-    context_paths: list[str] = []
+    context_paths: list[str] = Field(default_factory=list)
+    manual_context: Optional[str] = None
 
 
 class AppendRequest(BaseModel):
@@ -34,7 +36,8 @@ class AppendRequest(BaseModel):
     file_ids: list[str]
     input_path: str
     output_path: Optional[str] = None
-    context_paths: list[str] = []
+    context_paths: list[str] = Field(default_factory=list)
+    manual_context: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -108,12 +111,21 @@ def preview_mapping(data: MappingRequest):
 
 
 @router.post("/confirm")
-def confirm_import(data: MappingRequest, db: Session = Depends(get_db)):
+def confirm_import(
+    data: MappingRequest,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Cria um Dataset com todos os registros de todos os arquivos."""
+    require_writer(workspace)
     if not data.file_ids:
         raise HTTPException(400, "Nenhum arquivo informado")
 
-    ds = Dataset(name=data.dataset_name, description=data.dataset_description)
+    ds = Dataset(
+        name=data.dataset_name,
+        description=data.dataset_description,
+        workspace_id=workspace.workspace_id,
+    )
     db.add(ds)
     db.flush()  # gera ds.id sem commitar
 
@@ -146,9 +158,17 @@ def confirm_import(data: MappingRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/append")
-def append_to_dataset(data: AppendRequest, db: Session = Depends(get_db)):
+def append_to_dataset(
+    data: AppendRequest,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Adiciona registros a um dataset existente."""
-    ds = db.get(Dataset, data.dataset_id)
+    require_writer(workspace)
+    ds = db.query(Dataset).filter(
+        Dataset.id == data.dataset_id,
+        Dataset.workspace_id == workspace.workspace_id,
+    ).first()
     if not ds:
         raise HTTPException(404, "Dataset não encontrado")
 
@@ -171,6 +191,7 @@ def append_to_dataset(data: AppendRequest, db: Session = Depends(get_db)):
             input_path=data.input_path,
             output_path=data.output_path,
             context_paths=data.context_paths,
+            manual_context=data.manual_context,
         )
         for record in file_records:
             mapped = _map_record(record, mapping, global_index, session_tag)
@@ -203,6 +224,8 @@ def _map_record(record: dict, data: MappingRequest, index: int, session_tag: str
         val = to_str(resolve_path(record, cp))
         if val:
             context.append(val)
+    if data.manual_context and data.manual_context.strip():
+        context.append(data.manual_context.strip())
 
     return {
         "input": input_val,

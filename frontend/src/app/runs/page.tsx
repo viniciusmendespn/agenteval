@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
-import { GitCompare } from "lucide-react"
+import { GitCompare, Plus } from "lucide-react"
 import { getRuns, type TestRun } from "@/lib/api"
+import { TableSkeleton } from "@/components/Skeleton"
 
 const statusColor: Record<string, string> = {
   completed: "bg-green-100 text-green-700",
@@ -28,11 +29,15 @@ function ScoreBadge({ score }: { score?: number | null }) {
 
 export default function RunsPage() {
   const [runs, setRuns] = useState<TestRun[]>([])
+  const [loading, setLoading] = useState(true)
   const [agentFilter, setAgentFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
 
   useEffect(() => {
-    getRuns().then(setRuns).catch(() => {})
+    getRuns()
+      .then(setRuns)
+      .catch(() => setRuns([]))
+      .finally(() => setLoading(false))
   }, [])
 
   const agents = useMemo(() => {
@@ -53,22 +58,23 @@ export default function RunsPage() {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flame-page-header">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Execuções</h1>
           <p className="text-sm text-gray-500 mt-1">
-            {filtered.length} de {runs.length} execução(ões)
+            {loading ? "Carregando execuções..." : `${filtered.length} de ${runs.length} execução(ões)`}
           </p>
         </div>
         <div className="flex gap-2">
           <Link href="/runs/compare"
-            className="border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 flex items-center gap-2">
+            className="flame-button-secondary">
             <GitCompare className="w-4 h-4" />
             Comparar
           </Link>
           <Link href="/runs/new"
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700">
-            + Nova execução
+            className="flame-button">
+            <Plus className="h-4 w-4" />
+            Nova execução
           </Link>
         </div>
       </div>
@@ -80,7 +86,7 @@ export default function RunsPage() {
           <select
             value={agentFilter}
             onChange={e => setAgentFilter(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:outline-none"
           >
             <option value="all">Todos os agentes</option>
             {agents.map(([id, name]) => (
@@ -94,7 +100,7 @@ export default function RunsPage() {
           <select
             value={statusFilter}
             onChange={e => setStatusFilter(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 focus:outline-none"
           >
             <option value="all">Todos</option>
             <option value="completed">Concluída</option>
@@ -114,21 +120,23 @@ export default function RunsPage() {
         )}
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+      {loading ? (
+        <TableSkeleton columns={8} rows={6} />
+      ) : filtered.length === 0 ? (
+        <div className="flame-empty">
           <p className="text-gray-500 text-sm mb-3">
             {runs.length === 0 ? "Nenhuma execução ainda." : "Nenhuma execução encontrada com os filtros selecionados."}
           </p>
           {runs.length === 0 && (
-            <Link href="/runs/new" className="text-blue-600 hover:underline text-sm">
+            <Link href="/runs/new" className="flame-link-action">
               Criar primeira execução →
             </Link>
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
+        <div className="flame-panel overflow-hidden">
+          <table className="flame-table">
+            <thead>
               <tr>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">#</th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Agente</th>
@@ -162,7 +170,7 @@ export default function RunsPage() {
                   </td>
                   <td className="px-5 py-3">
                     <div className="flex items-center gap-3">
-                      <Link href={`/runs/${r.id}`} className="text-blue-600 hover:underline text-xs">
+                      <Link href={`/runs/${r.id}`} className="flame-link-action">
                         ver resultados
                       </Link>
                       {r.status === "completed" && (

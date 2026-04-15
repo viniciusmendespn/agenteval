@@ -6,7 +6,8 @@ from ..database import get_db, SessionLocal
 from ..models import Agent, EvaluationProfile, TestCase, TestRun, TestResult
 from ..schemas import TestRunCreate, TestRunOut
 from ..services.agent_caller import call_agent
-from ..services.evaluator import evaluate_response, compute_passed
+from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
+from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -22,38 +23,67 @@ def _enrich_run(run: TestRun, db: Session) -> dict:
 
 
 @router.get("/", response_model=list[TestRunOut])
-def list_runs(db: Session = Depends(get_db)):
-    runs = db.query(TestRun).order_by(TestRun.created_at.desc()).all()
+def list_runs(db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    runs = (
+        db.query(TestRun)
+        .filter(TestRun.workspace_id == workspace.workspace_id)
+        .order_by(TestRun.created_at.desc())
+        .all()
+    )
     return [_enrich_run(r, db) for r in runs]
 
 
 @router.get("/{run_id}", response_model=TestRunOut)
-def get_run(run_id: int, db: Session = Depends(get_db)):
-    run = db.get(TestRun, run_id)
+def get_run(run_id: int, db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    run = db.query(TestRun).filter(TestRun.id == run_id, TestRun.workspace_id == workspace.workspace_id).first()
     if not run:
         raise HTTPException(404, "Execução não encontrada")
     return _enrich_run(run, db)
 
 
+@router.delete("/{run_id}", status_code=204)
+def delete_run(run_id: int, db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    require_writer(workspace)
+    run = db.query(TestRun).filter(TestRun.id == run_id, TestRun.workspace_id == workspace.workspace_id).first()
+    if not run:
+        raise HTTPException(404, "Execução não encontrada")
+    db.query(TestResult).filter(TestResult.run_id == run_id).delete()
+    db.delete(run)
+    db.commit()
+
+
 @router.post("/", response_model=TestRunOut, status_code=201)
-def create_run(data: TestRunCreate, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    agent = db.get(Agent, data.agent_id)
+def create_run(
+    data: TestRunCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    require_writer(workspace)
+    agent = db.query(Agent).filter(Agent.id == data.agent_id, Agent.workspace_id == workspace.workspace_id).first()
     if not agent:
         raise HTTPException(404, "Agente não encontrado")
 
-    profile = db.get(EvaluationProfile, data.profile_id)
+    profile = db.query(EvaluationProfile).filter(
+        EvaluationProfile.id == data.profile_id,
+        EvaluationProfile.workspace_id == workspace.workspace_id,
+    ).first()
     if not profile:
         raise HTTPException(404, "Perfil de avaliação não encontrado")
 
-    test_cases = db.query(TestCase).filter(TestCase.id.in_(data.test_case_ids)).all()
-    if not test_cases:
-        raise HTTPException(400, "Nenhum caso de teste encontrado")
+    test_cases = db.query(TestCase).filter(
+        TestCase.id.in_(data.test_case_ids),
+        TestCase.workspace_id == workspace.workspace_id,
+    ).all()
+    if len(test_cases) != len(set(data.test_case_ids)):
+        raise HTTPException(400, "Um ou mais casos de teste nÃ£o existem neste workspace")
 
     run = TestRun(
         agent_id=data.agent_id,
         profile_id=data.profile_id,
         test_case_ids=data.test_case_ids,
         status="running",
+        workspace_id=workspace.workspace_id,
     )
     db.add(run)
     db.commit()
@@ -77,7 +107,9 @@ def _execute_run(run_id: int):
         for tc in ordered:
             result = _evaluate_case(run_id, tc, agent, profile)
             if result.scores:
-                all_scores.extend(result.scores.values())
+                for metric_name, score in result.scores.items():
+                    normalized = (1.0 - score) if metric_name in LOWER_IS_BETTER else score
+                    all_scores.append(normalized)
             db.add(result)
             db.commit()
 
@@ -130,14 +162,22 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
             use_latency=getattr(profile, "use_latency", False),
             latency_threshold_ms=getattr(profile, "latency_threshold_ms", 5000),
             criteria=profile.criteria or [],
+            use_non_advice=getattr(profile, "use_non_advice", False),
+            non_advice_threshold=getattr(profile, "non_advice_threshold", 0.5),
+            non_advice_types=getattr(profile, "non_advice_types", None) or [],
+            use_role_violation=getattr(profile, "use_role_violation", False),
+            role_violation_threshold=getattr(profile, "role_violation_threshold", 0.5),
+            role_violation_role=getattr(profile, "role_violation_role", None) or "",
         )
         thresholds = {
-            "relevancy":    profile.relevancy_threshold,
-            "hallucination": profile.hallucination_threshold,
-            "toxicity":     getattr(profile, "toxicity_threshold", 0.5),
-            "bias":         getattr(profile, "bias_threshold", 0.5),
-            "faithfulness": getattr(profile, "faithfulness_threshold", 0.5),
-            "latency":      0.5,
+            "relevancy":      profile.relevancy_threshold,
+            "hallucination":  profile.hallucination_threshold,
+            "toxicity":       getattr(profile, "toxicity_threshold", 0.5),
+            "bias":           getattr(profile, "bias_threshold", 0.5),
+            "faithfulness":   getattr(profile, "faithfulness_threshold", 0.5),
+            "latency":        0.5,
+            "non_advice":     getattr(profile, "non_advice_threshold", 0.5),
+            "role_violation": getattr(profile, "role_violation_threshold", 0.5),
             **{f"criterion_{i}": 0.5 for i in range(len(profile.criteria or []))},
         }
         passed = compute_passed(scores, thresholds) if scores else True

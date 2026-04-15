@@ -63,7 +63,7 @@ export default function EvolutionPage() {
     return timeline.points.map((p, idx) => {
       const row: Record<string, unknown> = {
         name: p.type === "run" ? `Run #${p.id}` : `Aval #${p.id}`,
-        date: new Date(p.date).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }),
+        date: new Date(p.date).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
         overall: p.overall_score != null ? Math.round(p.overall_score * 100) : null,
         passed: p.passed,
         total: p.total,

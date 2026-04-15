@@ -1,8 +1,7 @@
 "use client"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { API, workspaceHeaders } from "@/lib/api"
 
 interface Props {
   id: number
@@ -17,7 +16,7 @@ export default function DeleteButton({ id, path }: Props) {
   async function handleDelete() {
     setLoading(true)
     try {
-      await fetch(`${API}${path}/${id}`, { method: "DELETE" })
+      await fetch(`${API}${path}/${id}`, { method: "DELETE", headers: workspaceHeaders(false) })
       router.refresh()
     } finally {
       setLoading(false)

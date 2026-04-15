@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 # --- Agent ---
@@ -55,6 +55,22 @@ class EvaluationProfileCreate(BaseModel):
     use_latency: bool = False
     latency_threshold_ms: int = 5000
     criteria: list[str] = []
+    use_non_advice: bool = False
+    non_advice_threshold: float = 0.5
+    non_advice_types: list[str] = []
+    use_role_violation: bool = False
+    role_violation_threshold: float = 0.5
+    role_violation_role: str = ""
+
+    @field_validator("non_advice_types", mode="before")
+    @classmethod
+    def _coerce_non_advice_types(cls, v):
+        return v if v is not None else []
+
+    @field_validator("role_violation_role", mode="before")
+    @classmethod
+    def _coerce_role_violation_role(cls, v):
+        return v if v is not None else ""
 
 class EvaluationProfileOut(EvaluationProfileCreate):
     id: int
@@ -165,6 +181,24 @@ class DatasetEvaluationOut(BaseModel):
     created_at: datetime
     completed_at: Optional[datetime]
     results: list[DatasetResultOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+# --- Workspace ---
+
+class WorkspaceCreate(BaseModel):
+    name: str
+    slug: Optional[str] = None
+
+
+class WorkspaceOut(BaseModel):
+    id: int
+    name: str
+    slug: str
+    role: str = "member"
+    created_at: datetime
 
     class Config:
         from_attributes = True

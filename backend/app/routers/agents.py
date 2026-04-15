@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Agent
 from ..schemas import AgentCreate, AgentOut
+from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -13,13 +14,18 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 # ── Rotas estáticas primeiro (antes das dinâmicas com /{agent_id}) ──────────
 
 @router.get("/", response_model=list[AgentOut])
-def list_agents(db: Session = Depends(get_db)):
-    return db.query(Agent).all()
+def list_agents(db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    return db.query(Agent).filter(Agent.workspace_id == workspace.workspace_id).all()
 
 
 @router.post("/", response_model=AgentOut, status_code=201)
-def create_agent(data: AgentCreate, db: Session = Depends(get_db)):
-    agent = Agent(**data.model_dump())
+def create_agent(
+    data: AgentCreate,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    require_writer(workspace)
+    agent = Agent(**data.model_dump(), workspace_id=workspace.workspace_id)
     db.add(agent)
     db.commit()
     db.refresh(agent)
@@ -135,16 +141,22 @@ def preview_response(data: PreviewRequest):
 # ── Rotas dinâmicas por ID (depois das estáticas) ───────────────────────────
 
 @router.get("/{agent_id}", response_model=AgentOut)
-def get_agent(agent_id: int, db: Session = Depends(get_db)):
-    agent = db.get(Agent, agent_id)
+def get_agent(agent_id: int, db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
     if not agent:
         raise HTTPException(404, "Agente não encontrado")
     return agent
 
 
 @router.put("/{agent_id}", response_model=AgentOut)
-def update_agent(agent_id: int, data: AgentCreate, db: Session = Depends(get_db)):
-    agent = db.get(Agent, agent_id)
+def update_agent(
+    agent_id: int,
+    data: AgentCreate,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    require_writer(workspace)
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
     if not agent:
         raise HTTPException(404, "Agente não encontrado")
     for field, value in data.model_dump().items():
@@ -155,8 +167,9 @@ def update_agent(agent_id: int, data: AgentCreate, db: Session = Depends(get_db)
 
 
 @router.delete("/{agent_id}", status_code=204)
-def delete_agent(agent_id: int, db: Session = Depends(get_db)):
-    agent = db.get(Agent, agent_id)
+def delete_agent(agent_id: int, db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    require_writer(workspace)
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
     if not agent:
         raise HTTPException(404, "Agente não encontrado")
     db.delete(agent)

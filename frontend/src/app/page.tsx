@@ -6,6 +6,7 @@ import {
 } from "recharts"
 import { Bot, FlaskConical, Play, Database, TrendingUp, TrendingDown, Minus, RefreshCw } from "lucide-react"
 import { getAnalyticsOverview, type AnalyticsOverview } from "@/lib/api"
+import { Skeleton, TableSkeleton } from "@/components/Skeleton"
 
 function KpiCard({
   icon: Icon,
@@ -17,9 +18,9 @@ function KpiCard({
   value: number | string
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
+    <div className="flame-panel p-5 flex items-center gap-4">
       <div className="flame-icon-shell w-11 h-11">
-        <Icon className="w-5 h-5 text-blue-600" />
+        <Icon className="w-5 h-5 text-red-600" />
       </div>
       <div>
         <p className="text-2xl font-bold text-gray-900">{value}</p>
@@ -62,7 +63,7 @@ function ScoreDelta({ delta }: { delta?: number | null }) {
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2">
+    <div className="flame-panel px-3 py-2">
       <p className="text-xs text-gray-500 mb-1">Run #{label}</p>
       <p className="text-sm font-bold text-gray-900">{Math.round(payload[0].value * 100)}%</p>
     </div>
@@ -94,14 +95,32 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Carregando métricas...</p>
+          <Skeleton className="h-7 w-40" />
+          <Skeleton className="mt-2 h-4 w-64" />
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[1,2,3,4].map(i => (
-            <div key={i} className="bg-white rounded-xl border border-gray-200 p-5 h-20 animate-pulse" />
+            <div key={i} className="flame-panel flex items-center gap-4 p-5">
+              <Skeleton className="h-11 w-11" />
+              <div className="flex-1">
+                <Skeleton className="h-6 w-16" />
+                <Skeleton className="mt-2 h-3 w-24" />
+              </div>
+            </div>
           ))}
         </div>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="flame-panel p-5">
+            <Skeleton className="h-4 w-36" />
+            <Skeleton className="mt-6 h-12 w-28" />
+            <Skeleton className="mt-5 h-2 w-full rounded-full" />
+          </div>
+          <div className="flame-panel p-5 lg:col-span-2">
+            <Skeleton className="h-4 w-56" />
+            <Skeleton className="mt-6 h-44 w-full" />
+          </div>
+        </div>
+        <TableSkeleton columns={7} rows={4} />
       </div>
     )
   }
@@ -110,7 +129,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-4">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-        <div className="bg-red-50 border border-red-200 rounded-xl p-5 flex items-center justify-between">
+        <div className="rounded-md border border-red-200 bg-red-50 p-5 flex items-center justify-between">
           <div>
             <p className="text-sm font-medium text-red-700">Não foi possível conectar ao backend</p>
             <p className="text-xs text-red-500 mt-1">
@@ -119,7 +138,7 @@ export default function DashboardPage() {
           </div>
           <button
             onClick={load}
-            className="ml-4 shrink-0 text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700"
+            className="ml-4 shrink-0 rounded-md bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700"
           >
             Tentar novamente
           </button>
@@ -130,7 +149,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flame-page-header">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">Visão geral do sistema de avaliação</p>
@@ -138,13 +157,13 @@ export default function DashboardPage() {
         <div className="flex gap-2">
           <button
             onClick={load}
-            className="border border-gray-200 text-gray-500 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-1.5"
+            className="flame-button-secondary px-3"
             title="Atualizar dados"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
           <Link href="/runs/new"
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 flex items-center gap-2">
+            className="flame-button">
             <Play className="w-4 h-4" />
             Nova execução
           </Link>
@@ -163,7 +182,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* Score médio */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-4">
+        <div className="flame-panel p-5 flex flex-col gap-4">
           <p className="text-sm font-semibold text-gray-700">Score médio geral</p>
           {data?.avg_score != null ? (
             <>
@@ -187,7 +206,7 @@ export default function DashboardPage() {
               </div>
               <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
                 <div
-                  className="h-full rounded-full bg-blue-500"
+                  className="h-full rounded-full bg-red-600"
                   style={{ width: `${Math.round(data.pass_rate * 100)}%` }}
                 />
               </div>
@@ -211,7 +230,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Gráfico de tendência */}
-        <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
+        <div className="lg:col-span-2 flame-panel p-5">
           <p className="text-sm font-semibold text-gray-700 mb-4">Tendência de score (últimas execuções)</p>
           {trend.length >= 2 ? (
             <ResponsiveContainer width="100%" height={180}>
@@ -239,18 +258,18 @@ export default function DashboardPage() {
       </div>
 
       {/* Execuções recentes */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="flame-panel overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <p className="text-sm font-semibold text-gray-700">Execuções recentes</p>
-          <Link href="/runs" className="text-xs text-blue-600 hover:underline">Ver todas</Link>
+          <Link href="/runs" className="flame-link-action">Ver todas</Link>
         </div>
         {!data?.recent_runs?.length ? (
           <div className="p-8 text-center text-gray-400 text-sm">
             Nenhuma execução ainda.{" "}
-            <Link href="/runs/new" className="text-blue-600 hover:underline">Criar primeira execução</Link>
+            <Link href="/runs/new" className="flame-link-action">Criar primeira execução</Link>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="flame-table">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="text-left px-5 py-3 text-xs font-medium text-gray-500">#</th>
@@ -278,7 +297,7 @@ export default function DashboardPage() {
                     {new Date(run.created_at).toLocaleDateString("pt-BR")}
                   </td>
                   <td className="px-5 py-3">
-                    <Link href={`/runs/${run.id}`} className="text-xs text-blue-600 hover:underline">
+                    <Link href={`/runs/${run.id}`} className="flame-link-action">
                       ver →
                     </Link>
                   </td>

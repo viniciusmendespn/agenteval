@@ -23,7 +23,13 @@ export default function EditProfilePage() {
       faithfulness_threshold: p.faithfulness_threshold ?? 0.5,
       use_latency: p.use_latency ?? false,
       latency_threshold_ms: p.latency_threshold_ms ?? 5000,
-      criteria: p.criteria,
+      criteria: p.criteria ?? [],
+      use_non_advice: p.use_non_advice ?? false,
+      non_advice_threshold: p.non_advice_threshold ?? 0.5,
+      non_advice_types: p.non_advice_types ?? [],
+      use_role_violation: p.use_role_violation ?? false,
+      role_violation_threshold: p.role_violation_threshold ?? 0.5,
+      role_violation_role: p.role_violation_role ?? "Agente de atendimento",
     })).catch(() => {})
   }, [id])
 

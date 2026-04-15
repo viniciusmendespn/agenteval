@@ -4,8 +4,7 @@ import { useState, useRef, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { MessageSquare, X, Send, Bot, User, Loader2 } from "lucide-react"
-
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+import { API, workspaceHeaders } from "@/lib/api"
 
 type Message = {
   role: "user" | "assistant"
@@ -48,7 +47,7 @@ export default function FloatingChat() {
     try {
       const res = await fetch(`${API}/chat/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: workspaceHeaders(),
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
         }),

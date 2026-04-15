@@ -26,6 +26,7 @@ export default function ImportDatasetPage() {
   const [inputPath, setInputPath] = useState("")
   const [outputPath, setOutputPath] = useState(NONE)
   const [contextPaths, setContextPaths] = useState<string[]>([])
+  const [manualContext, setManualContext] = useState("")
 
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [createdDatasetId, setCreatedDatasetId] = useState<number | null>(null)
@@ -90,6 +91,7 @@ export default function ImportDatasetPage() {
       input_path: inputPath,
       output_path: outputPath === NONE ? undefined : outputPath,
       context_paths: contextPaths,
+      manual_context: manualContext.trim() || undefined,
     }
   }
 
@@ -206,6 +208,17 @@ export default function ImportDatasetPage() {
                   </label>
                 ))}
               </div>
+            </div>
+
+            <div>
+              <label className={lbl}>Contexto manual</label>
+              <p className={hint}>Texto aplicado a todos os registros importados, combinado com os campos selecionados acima.</p>
+              <textarea
+                className={`${inp} min-h-24 resize-y`}
+                value={manualContext}
+                onChange={e => setManualContext(e.target.value)}
+                placeholder="Ex: regras, politica, documento base ou instrucoes comuns para todos os arquivos"
+              />
             </div>
           </div>
 

@@ -1,64 +1,86 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { getProfiles } from "@/lib/api"
+import { Plus, SlidersHorizontal } from "lucide-react"
+import { getProfiles, type EvaluationProfile } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
+import { ListSkeleton } from "@/components/Skeleton"
 
-export const dynamic = "force-dynamic"
+export default function ProfilesPage() {
+  const [profiles, setProfiles] = useState<EvaluationProfile[]>([])
+  const [loading, setLoading] = useState(true)
 
-export default async function ProfilesPage() {
-  let profiles = []
-  try { profiles = await getProfiles() } catch {}
+  useEffect(() => {
+    getProfiles()
+      .then(setProfiles)
+      .catch(() => setProfiles([]))
+      .finally(() => setLoading(false))
+  }, [])
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Perfis de Avaliação</h1>
-        <Link href="/profiles/new"
-          className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">
-          + Novo perfil
+      <div className="flame-page-header">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Perfis de Avaliação</h1>
+          <p className="mt-1 text-sm text-gray-500">Critérios e limites usados nas avaliações deste workspace.</p>
+        </div>
+        <Link href="/profiles/new" className="flame-button">
+          <Plus className="h-4 w-4" />
+          Novo perfil
         </Link>
       </div>
 
-      {profiles.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center text-gray-400">
-          Nenhum perfil criado ainda.
+      {loading ? (
+        <ListSkeleton rows={5} />
+      ) : profiles.length === 0 ? (
+        <div className="flame-empty">
+          <div className="flame-icon-shell mx-auto mb-3 h-10 w-10">
+            <SlidersHorizontal className="h-5 w-5 text-red-600" />
+          </div>
+          <p className="text-sm font-semibold text-gray-700">Nenhum perfil criado ainda.</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {profiles.map((p) => (
-            <div key={p.id} className="bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900">{p.name}</p>
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    {p.use_relevancy && (
-                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-                        relevância ≥ {Math.round(p.relevancy_threshold * 100)}%
-                      </span>
-                    )}
-                    {p.use_hallucination && (
-                      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
-                        alucinação ≥ {Math.round(p.hallucination_threshold * 100)}%
-                      </span>
-                    )}
-                    {p.criteria.map((c, i) => (
-                      <span key={i} className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded max-w-xs truncate">
-                        {c}
-                      </span>
-                    ))}
-                    {!p.use_relevancy && !p.use_hallucination && p.criteria.length === 0 && (
-                      <span className="text-xs text-gray-400">nenhuma métrica configurada</span>
-                    )}
+          {profiles.map((p) => {
+            const metrics = [
+              p.use_relevancy ? `relevância >= ${Math.round(p.relevancy_threshold * 100)}%` : null,
+              p.use_faithfulness ? `fidelidade >= ${Math.round(p.faithfulness_threshold * 100)}%` : null,
+              p.use_hallucination ? `alucinação <= ${Math.round(p.hallucination_threshold * 100)}%` : null,
+              p.use_toxicity ? `toxicidade <= ${Math.round(p.toxicity_threshold * 100)}%` : null,
+              p.use_bias ? `viés <= ${Math.round(p.bias_threshold * 100)}%` : null,
+              p.use_non_advice ? `sem conselhos <= ${Math.round(p.non_advice_threshold * 100)}%` : null,
+              p.use_role_violation ? `papel <= ${Math.round(p.role_violation_threshold * 100)}%` : null,
+              p.use_latency ? `latência <= ${p.latency_threshold_ms}ms` : null,
+              ...p.criteria,
+            ].filter((item): item is string => Boolean(item))
+
+            return (
+              <div key={p.id} className="flame-panel p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-gray-900">{p.name}</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {metrics.map((metric, i) => (
+                        <span key={i} className="flame-chip max-w-xs truncate">
+                          {metric}
+                        </span>
+                      ))}
+                      {metrics.length === 0 && (
+                        <span className="text-xs text-gray-400">nenhuma métrica configurada</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Link href={`/profiles/${p.id}/edit`} className="flame-link-action">
+                      Editar
+                    </Link>
+                    <DeleteButton id={p.id} path="/profiles" />
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Link href={`/profiles/${p.id}/edit`} className="text-xs text-blue-500 hover:underline">
-                    Editar
-                  </Link>
-                  <DeleteButton id={p.id} path="/profiles" />
-                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>

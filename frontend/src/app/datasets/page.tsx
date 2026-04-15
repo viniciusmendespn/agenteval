@@ -1,60 +1,72 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import { getDatasets } from "@/lib/api"
+import { Database, Upload } from "lucide-react"
+import { getDatasets, type Dataset } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
+import { ListSkeleton } from "@/components/Skeleton"
 
-export const dynamic = "force-dynamic"
+export default function DatasetsPage() {
+  const [datasets, setDatasets] = useState<Dataset[]>([])
+  const [loading, setLoading] = useState(true)
 
-export default async function DatasetsPage() {
-  let datasets = []
-  try { datasets = await getDatasets() } catch {}
+  useEffect(() => {
+    getDatasets()
+      .then(setDatasets)
+      .catch(() => setDatasets([]))
+      .finally(() => setLoading(false))
+  }, [])
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flame-page-header">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Datasets</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Conversas históricas importadas para avaliação offline — sem chamar nenhum agente.
+          <p className="mt-1 text-sm text-gray-500">
+            Conversas históricas importadas para avaliação offline, sem chamar nenhum agente.
           </p>
         </div>
-        <Link href="/datasets/import"
-          className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">
-          ↑ Importar dataset
+        <Link href="/datasets/import" className="flame-button">
+          <Upload className="h-4 w-4" />
+          Importar dataset
         </Link>
       </div>
 
-      {datasets.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
-          <p className="text-gray-400 mb-3">Nenhum dataset importado ainda.</p>
-          <Link href="/datasets/import" className="text-blue-600 text-sm hover:underline">
-            Importar primeiro dataset →
+      {loading ? (
+        <ListSkeleton rows={5} />
+      ) : datasets.length === 0 ? (
+        <div className="flame-empty">
+          <div className="flame-icon-shell mx-auto mb-3 h-10 w-10">
+            <Database className="h-5 w-5 text-red-600" />
+          </div>
+          <p className="mb-3 text-sm font-semibold text-gray-700">Nenhum dataset importado ainda.</p>
+          <Link href="/datasets/import" className="flame-link-action">
+            Importar primeiro dataset
           </Link>
         </div>
       ) : (
         <div className="space-y-3">
           {datasets.map((ds) => (
-            <div key={ds.id} className="bg-white rounded-lg border border-gray-200 p-4">
+            <div key={ds.id} className="flame-panel p-4">
               <div className="flex items-center justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <Link href={`/datasets/${ds.id}`}
-                    className="font-medium text-gray-900 hover:text-blue-600">
+                <div className="min-w-0 flex-1">
+                  <Link href={`/datasets/${ds.id}`} className="font-semibold text-gray-900 hover:text-red-700">
                     {ds.name}
                   </Link>
                   {ds.description && (
-                    <p className="text-xs text-gray-400 mt-0.5">{ds.description}</p>
+                    <p className="mt-0.5 text-xs text-gray-400">{ds.description}</p>
                   )}
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="mt-1 text-xs text-gray-400">
                     {ds.record_count.toLocaleString()} registros ·{" "}
                     {new Date(ds.created_at).toLocaleDateString("pt-BR")}
                   </p>
                 </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <Link href={`/datasets/${ds.id}/evaluate`}
-                    className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700">
+                <div className="flex shrink-0 items-center gap-3">
+                  <Link href={`/datasets/${ds.id}/evaluate`} className="flame-button h-8 min-h-8 px-3 text-xs">
                     Avaliar
                   </Link>
-                  <Link href={`/datasets/${ds.id}`}
-                    className="text-xs text-blue-500 hover:underline">
+                  <Link href={`/datasets/${ds.id}`} className="flame-link-action">
                     Ver registros
                   </Link>
                   <DeleteButton id={ds.id} path="/datasets" />

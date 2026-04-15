@@ -49,6 +49,16 @@ const METRIC_MAP: Record<string, MetricInfo> = {
     shortLabel: "Latência",
     invertScore: false,
   },
+  non_advice: {
+    label: "Ausência de Conselhos Indevidos",
+    shortLabel: "Sem Conselhos",
+    invertScore: true,
+  },
+  role_violation: {
+    label: "Conformidade de Papel",
+    shortLabel: "Papel",
+    invertScore: true,
+  },
 }
 
 export function getMetricInfo(key: string): MetricInfo {

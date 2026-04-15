@@ -1,9 +1,37 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+export const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+
+const WORKSPACE_STORAGE_KEY = "agenteval.workspaceId"
+
+export function getActiveWorkspaceId() {
+  if (typeof window === "undefined") return null
+  const stored = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
+  if (!stored || stored === "1") return null
+  return stored
+}
+
+export function setActiveWorkspaceId(id: number | string) {
+  if (typeof window === "undefined") return
+  window.localStorage.setItem(WORKSPACE_STORAGE_KEY, String(id))
+}
+
+export function clearActiveWorkspaceId() {
+  if (typeof window === "undefined") return
+  window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
+}
+
+export function workspaceHeaders(includeJson = true): HeadersInit {
+  const headers: Record<string, string> = {}
+  if (includeJson) headers["Content-Type"] = "application/json"
+  const workspaceId = getActiveWorkspaceId()
+  if (workspaceId) headers["X-Workspace-Id"] = workspaceId
+  headers["X-User-Email"] = "local@agenteval.dev"
+  return headers
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     cache: "no-store",
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { ...workspaceHeaders(), ...init?.headers },
     ...init,
   })
   if (!res.ok) {
@@ -21,6 +49,7 @@ export type Agent = {
   name: string
   url: string
   api_key: string
+  model?: string
   connection_type: string
   request_body: string
   output_field: string
@@ -53,6 +82,12 @@ export type EvaluationProfile = {
   use_latency: boolean
   latency_threshold_ms: number
   criteria: string[]
+  use_non_advice: boolean
+  non_advice_threshold: number
+  non_advice_types: string[]
+  use_role_violation: boolean
+  role_violation_threshold: number
+  role_violation_role: string
   created_at: string
 }
 
@@ -181,6 +216,20 @@ export type DatasetEvaluation = {
   results: DatasetResult[]
 }
 
+export type Workspace = {
+  id: number
+  name: string
+  slug: string
+  role: "owner" | "admin" | "member" | "viewer"
+  created_at: string
+}
+
+// --- Workspaces ---
+export const getWorkspaces = () => request<Workspace[]>("/workspaces/")
+export const getCurrentWorkspace = () => request<Workspace>("/workspaces/current")
+export const createWorkspace = (data: { name: string; slug?: string }) =>
+  request<Workspace>("/workspaces/", { method: "POST", body: JSON.stringify(data) })
+
 // --- Agents ---
 export const getAgents = () => request<Agent[]>("/agents/")
 export const getAgent = (id: number) => request<Agent>(`/agents/${id}`)
@@ -257,6 +306,7 @@ export type MappingRequest = {
   input_path: string
   output_path?: string
   context_paths: string[]
+  manual_context?: string
 }
 
 export type AnalyzeResult = {
@@ -280,14 +330,14 @@ export type PreviewResult = {
 export const analyzeImport = (file: File): Promise<AnalyzeResult> => {
   const form = new FormData()
   form.append("file", file)
-  return fetch(`${API}/imports/analyze`, { method: "POST", body: form, cache: "no-store" })
+  return fetch(`${API}/imports/analyze`, { method: "POST", body: form, cache: "no-store", headers: workspaceHeaders(false) })
     .then(async res => { if (!res.ok) throw new Error(await res.text()); return res.json() })
 }
 
 export const uploadExtraFile = (file: File): Promise<{ file_id: string; filename: string; record_count: number }> => {
   const form = new FormData()
   form.append("file", file)
-  return fetch(`${API}/imports/upload`, { method: "POST", body: form, cache: "no-store" })
+  return fetch(`${API}/imports/upload`, { method: "POST", body: form, cache: "no-store", headers: workspaceHeaders(false) })
     .then(async res => { if (!res.ok) throw new Error(await res.text()); return res.json() })
 }
 
@@ -303,6 +353,7 @@ export type AppendRequest = {
   input_path: string
   output_path?: string
   context_paths: string[]
+  manual_context?: string
 }
 
 export const appendToDataset = (data: AppendRequest) =>

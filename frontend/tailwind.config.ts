@@ -21,6 +21,7 @@ const config: Config = {
       colors: {
         blue: santanderRed,
         indigo: santanderRed,
+        red: santanderRed,
         gray: {
           50: "#f7f8fa",
           100: "#eef0f2",

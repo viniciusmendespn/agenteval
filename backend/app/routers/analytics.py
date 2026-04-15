@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from ..database import get_db
@@ -8,20 +8,31 @@ from ..models import (
     EvaluationProfile,
 )
 from ..services.evaluator import LOWER_IS_BETTER
+from ..workspace import WorkspaceContext, get_current_workspace
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
 @router.get("/dataset-evaluations")
-def list_all_dataset_evaluations(db: Session = Depends(get_db)):
+def list_all_dataset_evaluations(
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Lista todas as avaliações de dataset de todos os datasets."""
     evs = (
         db.query(DatasetEvaluation)
+        .filter(DatasetEvaluation.workspace_id == workspace.workspace_id)
         .order_by(DatasetEvaluation.created_at.desc())
         .all()
     )
-    dataset_names = {d.id: d.name for d in db.query(Dataset).all()}
-    profile_names = {p.id: p.name for p in db.query(EvaluationProfile).all()}
+    dataset_names = {
+        d.id: d.name
+        for d in db.query(Dataset).filter(Dataset.workspace_id == workspace.workspace_id).all()
+    }
+    profile_names = {
+        p.id: p.name
+        for p in db.query(EvaluationProfile).filter(EvaluationProfile.workspace_id == workspace.workspace_id).all()
+    }
 
     return [
         {
@@ -40,18 +51,25 @@ def list_all_dataset_evaluations(db: Session = Depends(get_db)):
 
 
 @router.get("/overview")
-def get_overview(db: Session = Depends(get_db)):
+def get_overview(
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Resumo geral do sistema: totais, tendência de score e runs recentes."""
     totals = {
-        "agents": db.query(func.count(Agent.id)).scalar(),
-        "test_cases": db.query(func.count(TestCase.id)).scalar(),
-        "runs": db.query(func.count(TestRun.id)).scalar(),
-        "datasets": db.query(func.count(Dataset.id)).scalar(),
+        "agents": db.query(func.count(Agent.id)).filter(Agent.workspace_id == workspace.workspace_id).scalar(),
+        "test_cases": db.query(func.count(TestCase.id)).filter(TestCase.workspace_id == workspace.workspace_id).scalar(),
+        "runs": db.query(func.count(TestRun.id)).filter(TestRun.workspace_id == workspace.workspace_id).scalar(),
+        "datasets": db.query(func.count(Dataset.id)).filter(Dataset.workspace_id == workspace.workspace_id).scalar(),
     }
 
     completed_runs = (
         db.query(TestRun)
-        .filter(TestRun.status == "completed", TestRun.overall_score.isnot(None))
+        .filter(
+            TestRun.workspace_id == workspace.workspace_id,
+            TestRun.status == "completed",
+            TestRun.overall_score.isnot(None),
+        )
         .order_by(TestRun.created_at.desc())
         .all()
     )
@@ -63,15 +81,19 @@ def get_overview(db: Session = Depends(get_db)):
         avg_score = round(sum(scores) / len(scores), 4) if scores else None
 
         # Taxa de aprovação baseada nos resultados individuais
-        total_results = db.query(func.count(TestResult.id)).scalar() or 0
-        passed_results = db.query(func.count(TestResult.id)).filter(TestResult.passed == True).scalar() or 0
+        run_ids = [r.id for r in completed_runs]
+        total_results = db.query(func.count(TestResult.id)).filter(TestResult.run_id.in_(run_ids)).scalar() or 0
+        passed_results = db.query(func.count(TestResult.id)).filter(
+            TestResult.run_id.in_(run_ids),
+            TestResult.passed == True,
+        ).scalar() or 0
         pass_rate = round(passed_results / total_results, 4) if total_results > 0 else None
 
     runs_by_status = {
-        "completed": db.query(func.count(TestRun.id)).filter(TestRun.status == "completed").scalar(),
-        "running": db.query(func.count(TestRun.id)).filter(TestRun.status == "running").scalar(),
-        "failed": db.query(func.count(TestRun.id)).filter(TestRun.status == "failed").scalar(),
-        "pending": db.query(func.count(TestRun.id)).filter(TestRun.status == "pending").scalar(),
+        "completed": db.query(func.count(TestRun.id)).filter(TestRun.workspace_id == workspace.workspace_id, TestRun.status == "completed").scalar(),
+        "running": db.query(func.count(TestRun.id)).filter(TestRun.workspace_id == workspace.workspace_id, TestRun.status == "running").scalar(),
+        "failed": db.query(func.count(TestRun.id)).filter(TestRun.workspace_id == workspace.workspace_id, TestRun.status == "failed").scalar(),
+        "pending": db.query(func.count(TestRun.id)).filter(TestRun.workspace_id == workspace.workspace_id, TestRun.status == "pending").scalar(),
     }
 
     # Tendência: últimas 15 execuções concluídas
@@ -87,11 +109,15 @@ def get_overview(db: Session = Depends(get_db)):
     # Últimas 5 runs (qualquer status)
     recent_runs_raw = (
         db.query(TestRun)
+        .filter(TestRun.workspace_id == workspace.workspace_id)
         .order_by(TestRun.created_at.desc())
         .limit(5)
         .all()
     )
-    agent_names = {a.id: a.name for a in db.query(Agent).all()}
+    agent_names = {
+        a.id: a.name
+        for a in db.query(Agent).filter(Agent.workspace_id == workspace.workspace_id).all()
+    }
     recent_runs = [
         {
             "id": r.id,
@@ -115,11 +141,14 @@ def get_overview(db: Session = Depends(get_db)):
 
 
 @router.get("/runs/{run_id}/breakdown")
-def get_run_breakdown(run_id: int, db: Session = Depends(get_db)):
+def get_run_breakdown(
+    run_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Breakdown detalhado de uma execução por métrica."""
-    run = db.get(TestRun, run_id)
+    run = db.query(TestRun).filter(TestRun.id == run_id, TestRun.workspace_id == workspace.workspace_id).first()
     if not run:
-        from fastapi import HTTPException
         raise HTTPException(404, "Execução não encontrada")
 
     results = db.query(TestResult).filter(TestResult.run_id == run_id).all()
@@ -160,19 +189,25 @@ def get_run_breakdown(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/runs/compare")
-def compare_runs(body: dict, db: Session = Depends(get_db)):
+def compare_runs(
+    body: dict,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Compara duas execuções — identifica regressões e melhorias."""
     run_id_a = body.get("run_id_a")
     run_id_b = body.get("run_id_b")
 
-    run_a = db.get(TestRun, run_id_a)
-    run_b = db.get(TestRun, run_id_b)
+    run_a = db.query(TestRun).filter(TestRun.id == run_id_a, TestRun.workspace_id == workspace.workspace_id).first()
+    run_b = db.query(TestRun).filter(TestRun.id == run_id_b, TestRun.workspace_id == workspace.workspace_id).first()
 
     if not run_a or not run_b:
-        from fastapi import HTTPException
         raise HTTPException(404, "Uma ou ambas execuções não encontradas")
 
-    agent_names = {a.id: a.name for a in db.query(Agent).all()}
+    agent_names = {
+        a.id: a.name
+        for a in db.query(Agent).filter(Agent.workspace_id == workspace.workspace_id).all()
+    }
 
     results_a = {r.test_case_id: r for r in db.query(TestResult).filter(TestResult.run_id == run_id_a).all()}
     results_b = {r.test_case_id: r for r in db.query(TestResult).filter(TestResult.run_id == run_id_b).all()}
@@ -198,7 +233,13 @@ def compare_runs(body: dict, db: Session = Depends(get_db)):
 
     # Casos em comum
     tc_ids = set(results_a.keys()) | set(results_b.keys())
-    tc_map = {tc.id: tc.title for tc in db.query(TestCase).filter(TestCase.id.in_(tc_ids)).all()}
+    tc_map = {
+        tc.id: tc.title
+        for tc in db.query(TestCase).filter(
+            TestCase.id.in_(tc_ids),
+            TestCase.workspace_id == workspace.workspace_id,
+        ).all()
+    }
 
     cases = []
     for tc_id in sorted(tc_ids):
@@ -248,16 +289,23 @@ def compare_runs(body: dict, db: Session = Depends(get_db)):
 
 
 @router.get("/timeline/agents/{agent_id}")
-def agent_timeline(agent_id: int, db: Session = Depends(get_db)):
+def agent_timeline(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Timeline de evolução de um agente: todos os runs completos com breakdown de métricas."""
-    agent = db.get(Agent, agent_id)
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
     if not agent:
-        from fastapi import HTTPException
         raise HTTPException(404, "Agente não encontrado")
 
     runs = (
         db.query(TestRun)
-        .filter(TestRun.agent_id == agent_id, TestRun.status == "completed")
+        .filter(
+            TestRun.workspace_id == workspace.workspace_id,
+            TestRun.agent_id == agent_id,
+            TestRun.status == "completed",
+        )
         .order_by(TestRun.created_at.asc())
         .all()
     )
@@ -293,7 +341,10 @@ def agent_timeline(agent_id: int, db: Session = Depends(get_db)):
             "profile_id": run.profile_id,
         })
 
-    profile_names = {p.id: p.name for p in db.query(EvaluationProfile).all()}
+    profile_names = {
+        p.id: p.name
+        for p in db.query(EvaluationProfile).filter(EvaluationProfile.workspace_id == workspace.workspace_id).all()
+    }
 
     return {
         "agent_id": agent_id,
@@ -304,16 +355,23 @@ def agent_timeline(agent_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/timeline/datasets/{dataset_id}")
-def dataset_timeline(dataset_id: int, db: Session = Depends(get_db)):
+def dataset_timeline(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Timeline de evolução de um dataset: todas as avaliações completas com breakdown de métricas."""
-    ds = db.get(Dataset, dataset_id)
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
     if not ds:
-        from fastapi import HTTPException
         raise HTTPException(404, "Dataset não encontrado")
 
     evals = (
         db.query(DatasetEvaluation)
-        .filter(DatasetEvaluation.dataset_id == dataset_id, DatasetEvaluation.status == "completed")
+        .filter(
+            DatasetEvaluation.workspace_id == workspace.workspace_id,
+            DatasetEvaluation.dataset_id == dataset_id,
+            DatasetEvaluation.status == "completed",
+        )
         .order_by(DatasetEvaluation.created_at.asc())
         .all()
     )
@@ -348,7 +406,10 @@ def dataset_timeline(dataset_id: int, db: Session = Depends(get_db)):
             "profile_id": ev.profile_id,
         })
 
-    profile_names = {p.id: p.name for p in db.query(EvaluationProfile).all()}
+    profile_names = {
+        p.id: p.name
+        for p in db.query(EvaluationProfile).filter(EvaluationProfile.workspace_id == workspace.workspace_id).all()
+    }
 
     return {
         "dataset_id": dataset_id,

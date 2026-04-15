@@ -4,13 +4,19 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Dataset, DatasetRecord, DatasetResult
 from ..schemas import DatasetCreate, DatasetOut, DatasetDetailOut
+from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
 
 
 @router.get("/", response_model=list[DatasetOut])
-def list_datasets(db: Session = Depends(get_db)):
-    datasets = db.query(Dataset).order_by(Dataset.created_at.desc()).all()
+def list_datasets(db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    datasets = (
+        db.query(Dataset)
+        .filter(Dataset.workspace_id == workspace.workspace_id)
+        .order_by(Dataset.created_at.desc())
+        .all()
+    )
     result = []
     for ds in datasets:
         count = db.query(DatasetRecord).filter(DatasetRecord.dataset_id == ds.id).count()
@@ -26,16 +32,21 @@ def list_datasets(db: Session = Depends(get_db)):
 
 
 @router.get("/{dataset_id}", response_model=DatasetDetailOut)
-def get_dataset(dataset_id: int, db: Session = Depends(get_db)):
-    ds = db.get(Dataset, dataset_id)
+def get_dataset(dataset_id: int, db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
     if not ds:
         raise HTTPException(404, "Dataset não encontrado")
     return ds
 
 
 @router.post("/", response_model=DatasetOut, status_code=201)
-def create_dataset(data: DatasetCreate, db: Session = Depends(get_db)):
-    ds = Dataset(name=data.name, description=data.description)
+def create_dataset(
+    data: DatasetCreate,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    require_writer(workspace)
+    ds = Dataset(name=data.name, description=data.description, workspace_id=workspace.workspace_id)
     db.add(ds)
     db.commit()
     db.refresh(ds)
@@ -44,8 +55,9 @@ def create_dataset(data: DatasetCreate, db: Session = Depends(get_db)):
 
 
 @router.delete("/{dataset_id}", status_code=204)
-def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
-    ds = db.get(Dataset, dataset_id)
+def delete_dataset(dataset_id: int, db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    require_writer(workspace)
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
     if not ds:
         raise HTTPException(404, "Dataset não encontrado")
     db.delete(ds)
@@ -53,7 +65,16 @@ def delete_dataset(dataset_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{dataset_id}/records/{record_id}", status_code=204)
-def delete_record(dataset_id: int, record_id: int, db: Session = Depends(get_db)):
+def delete_record(
+    dataset_id: int,
+    record_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    require_writer(workspace)
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
+    if not ds:
+        raise HTTPException(404, "Dataset nÃ£o encontrado")
     record = db.query(DatasetRecord).filter(
         DatasetRecord.id == record_id,
         DatasetRecord.dataset_id == dataset_id,
@@ -70,17 +91,31 @@ class BulkDeleteRequest(BaseModel):
 
 
 @router.post("/{dataset_id}/records/bulk-delete", status_code=200)
-def bulk_delete_records(dataset_id: int, data: BulkDeleteRequest, db: Session = Depends(get_db)):
-    ds = db.get(Dataset, dataset_id)
+def bulk_delete_records(
+    dataset_id: int,
+    data: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    require_writer(workspace)
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
     if not ds:
         raise HTTPException(404, "Dataset não encontrado")
     if not data.record_ids:
         return {"deleted": 0}
+    scoped_record_ids = [
+        r.id for r in db.query(DatasetRecord.id).filter(
+            DatasetRecord.dataset_id == dataset_id,
+            DatasetRecord.id.in_(data.record_ids),
+        ).all()
+    ]
+    if not scoped_record_ids:
+        return {"deleted": 0}
     # Delete associated results first
-    db.query(DatasetResult).filter(DatasetResult.record_id.in_(data.record_ids)).delete(synchronize_session=False)
+    db.query(DatasetResult).filter(DatasetResult.record_id.in_(scoped_record_ids)).delete(synchronize_session=False)
     deleted = db.query(DatasetRecord).filter(
         DatasetRecord.dataset_id == dataset_id,
-        DatasetRecord.id.in_(data.record_ids),
+        DatasetRecord.id.in_(scoped_record_ids),
     ).delete(synchronize_session=False)
     db.commit()
     return {"deleted": deleted}

@@ -25,6 +25,7 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
   const [inputPath, setInputPath] = useState("")
   const [outputPath, setOutputPath] = useState("")
   const [contextPaths, setContextPaths] = useState<string[]>([])
+  const [manualContext, setManualContext] = useState("")
 
   // Confirm step
   const [appended, setAppended] = useState<number | null>(null)
@@ -57,6 +58,7 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
         input_path: inputPath,
         output_path: outputPath || undefined,
         context_paths: contextPaths,
+        manual_context: manualContext.trim() || undefined,
       })
       setAppended(result.appended)
       setStep("confirm")
@@ -194,6 +196,21 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Contexto manual <span className="text-gray-400">(opcional)</span>
+                </label>
+                <p className="text-xs text-gray-400 mb-2">
+                  Texto aplicado a todos os registros importados, combinado com os campos selecionados acima.
+                </p>
+                <textarea
+                  value={manualContext}
+                  onChange={e => setManualContext(e.target.value)}
+                  placeholder="Ex: regras, politica, documento base ou instrucoes comuns para todo o arquivo"
+                  className="w-full min-h-24 resize-y border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
               </div>
 
               {/* Preview */}
