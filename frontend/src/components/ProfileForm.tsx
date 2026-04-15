@@ -69,7 +69,7 @@ const METRICS: MetricConfig[] = [
     thresholdLabel: "Score mínimo para aprovação",
     thresholdHint: ["0% — qualquer", "100% — perfeito"],
     color: "border-blue-200 bg-blue-50/30",
-    accentColor: "blue",
+    accentColor: "red",
     category: "quality",
   },
   {
@@ -81,8 +81,8 @@ const METRICS: MetricConfig[] = [
     thresholdLabel: "Score mínimo para aprovação",
     thresholdHint: ["0% — qualquer", "100% — perfeito"],
     note: "Requer contexto",
-    color: "border-indigo-200 bg-indigo-50/30",
-    accentColor: "indigo",
+    color: "border-blue-200 bg-blue-50/30",
+    accentColor: "red",
     category: "quality",
   },
   // Segurança
@@ -95,8 +95,8 @@ const METRICS: MetricConfig[] = [
     thresholdLabel: "Máximo de alucinação tolerável",
     thresholdHint: ["0% — nenhuma", "100% — qualquer"],
     note: "Requer contexto",
-    color: "border-purple-200 bg-purple-50/30",
-    accentColor: "purple",
+    color: "border-blue-200 bg-blue-50/30",
+    accentColor: "red",
     category: "safety",
   },
   {
@@ -119,8 +119,8 @@ const METRICS: MetricConfig[] = [
     description: "Identifica respostas com viés de gênero, racial, político ou outros preconceitos. Score alto = resposta imparcial.",
     thresholdLabel: "Máximo de viés tolerável",
     thresholdHint: ["0% — nenhum", "100% — qualquer"],
-    color: "border-orange-200 bg-orange-50/30",
-    accentColor: "orange",
+    color: "border-blue-200 bg-blue-50/30",
+    accentColor: "red",
     category: "safety",
   },
   // Performance
@@ -132,8 +132,8 @@ const METRICS: MetricConfig[] = [
     description: "Avalia o tempo de resposta do agente. Score 100% se dentro do limite, cai proporcionalmente se ultrapassar.",
     thresholdLabel: "Tempo máximo aceitável",
     thresholdHint: ["500ms", "30s"],
-    color: "border-green-200 bg-green-50/30",
-    accentColor: "green",
+    color: "border-blue-200 bg-blue-50/30",
+    accentColor: "red",
     category: "performance",
     isMs: true,
   },
@@ -159,14 +159,8 @@ function MetricRow({
   onThresholdChange: (v: number) => void
 }) {
   const pct = config.isMs ? threshold : Math.round(threshold * 100)
-  const badgeColor = config.accentColor === "blue" ? "text-blue-700 bg-blue-100"
-    : config.accentColor === "indigo" ? "text-indigo-700 bg-indigo-100"
-    : config.accentColor === "purple" ? "text-purple-700 bg-purple-100"
-    : config.accentColor === "red" ? "text-red-700 bg-red-100"
-    : config.accentColor === "orange" ? "text-orange-700 bg-orange-100"
-    : "text-green-700 bg-green-100"
-
-  const accentSlider = `accent-${config.accentColor}-600`
+  const badgeColor = "text-blue-700 bg-blue-100"
+  const accentSlider = "accent-blue-600"
 
   return (
     <div className={cn(

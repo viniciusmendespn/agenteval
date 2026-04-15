@@ -18,7 +18,7 @@ export default function FloatingChat() {
     {
       role: "assistant",
       content:
-        "Olá! Sou o assistente do AgentEval. Posso ajudar você a criar agentes, perfis de avaliação, casos de teste e iniciar execuções. O que você precisa?",
+        "Olá! Sou o assistente do Santander AgentEval. Posso ajudar você a criar agentes, perfis de avaliação, casos de teste e iniciar execuções. O que você precisa?",
     },
   ])
   const [input, setInput] = useState("")
@@ -82,16 +82,16 @@ export default function FloatingChat() {
     <>
       {/* Painel de chat */}
       {open && (
-        <div className="fixed bottom-20 right-6 z-50 w-[380px] max-h-[600px] flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+        <div className="fixed bottom-20 right-6 z-50 w-[380px] max-h-[600px] flex flex-col bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-indigo-600 text-white shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 bg-blue-600 text-white shrink-0">
             <div className="flex items-center gap-2">
               <Bot size={18} />
-              <span className="font-semibold text-sm">Assistente AgentEval</span>
+              <span className="font-semibold text-sm">Assistente Santander AgentEval</span>
             </div>
             <button
               onClick={() => setOpen(false)}
-              className="hover:bg-indigo-500 rounded-full p-1 transition-colors"
+              className="hover:bg-blue-500 rounded-full p-1 transition-colors"
             >
               <X size={16} />
             </button>
@@ -103,7 +103,7 @@ export default function FloatingChat() {
               <div key={i} className={`flex gap-2 ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
                 <div
                   className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-                    m.role === "user" ? "bg-indigo-100 text-indigo-600" : "bg-gray-100 text-gray-600"
+                    m.role === "user" ? "bg-white border border-blue-200 text-blue-600" : "bg-white border border-gray-200 text-blue-600"
                   }`}
                 >
                   {m.role === "user" ? <User size={14} /> : <Bot size={14} />}
@@ -111,7 +111,7 @@ export default function FloatingChat() {
                 <div
                   className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
                     m.role === "user"
-                      ? "bg-indigo-600 text-white rounded-tr-sm"
+                      ? "bg-blue-600 text-white rounded-tr-sm"
                       : "bg-gray-100 text-gray-800 rounded-tl-sm"
                   }`}
                 >
@@ -128,7 +128,7 @@ export default function FloatingChat() {
 
             {loading && (
               <div className="flex gap-2">
-                <div className="shrink-0 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-600">
+                <div className="shrink-0 w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-blue-600">
                   <Bot size={14} />
                 </div>
                 <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3 py-2">
@@ -150,7 +150,7 @@ export default function FloatingChat() {
               placeholder="Digite sua mensagem… (Enter para enviar)"
               rows={1}
               disabled={loading}
-              className="flex-1 resize-none text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:opacity-50 max-h-28 overflow-y-auto"
+              className="flex-1 resize-none text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 max-h-28 overflow-y-auto"
               style={{ minHeight: "38px" }}
               onInput={(e) => {
                 const el = e.currentTarget
@@ -161,7 +161,7 @@ export default function FloatingChat() {
             <button
               onClick={send}
               disabled={!input.trim() || loading}
-              className="shrink-0 w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="shrink-0 w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Send size={15} />
             </button>
@@ -172,7 +172,7 @@ export default function FloatingChat() {
       {/* Botão flutuante */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 active:scale-95 transition-all flex items-center justify-center"
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center"
         aria-label="Abrir assistente"
       >
         {open ? <X size={22} /> : <MessageSquare size={22} />}

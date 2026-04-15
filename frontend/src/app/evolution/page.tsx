@@ -12,8 +12,8 @@ import {
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 
 const CHART_COLORS = [
-  "#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
-  "#06b6d4", "#ec4899", "#84cc16",
+  "#ec0000", "#10b981", "#f59e0b", "#6b7280", "#8b5cf6",
+  "#06b6d4", "#db2777", "#84cc16",
 ]
 
 type Source = { type: "agent"; id: number } | { type: "dataset"; id: number }
@@ -242,14 +242,14 @@ export default function EvolutionPage() {
             <p className="text-xs text-gray-400 mb-3">Scores normalizados (100% = ótimo)</p>
             <ResponsiveContainer width="100%" height={350}>
               <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef0f2" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#9ca3af" }} />
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: "#9ca3af" }} tickFormatter={v => `${v}%`} />
                 <Tooltip
                   contentStyle={{ borderRadius: "0.5rem", border: "1px solid #e5e7eb", fontSize: "0.75rem" }}
-                  formatter={(value: number, name: string) => {
-                    const info = getMetricInfo(name)
-                    return [`${value}%`, info.label]
+                  formatter={(value, name) => {
+                    const info = getMetricInfo(String(name))
+                    return [`${Number(value ?? 0)}%`, info.label]
                   }}
                   labelFormatter={(label, payload) => {
                     if (payload?.[0]?.payload) {
@@ -288,12 +288,12 @@ export default function EvolutionPage() {
             <h2 className="text-sm font-semibold text-gray-700 mb-4">Score geral ao longo do tempo</h2>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef0f2" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#9ca3af" }} />
                 <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: "#9ca3af" }} tickFormatter={v => `${v}%`} />
                 <Tooltip
                   contentStyle={{ borderRadius: "0.5rem", border: "1px solid #e5e7eb", fontSize: "0.75rem" }}
-                  formatter={(value: number) => [`${value}%`, "Score geral"]}
+                  formatter={(value) => [`${Number(value ?? 0)}%`, "Score geral"]}
                   labelFormatter={(label, payload) => {
                     if (payload?.[0]?.payload) {
                       const p = payload[0].payload
@@ -305,9 +305,9 @@ export default function EvolutionPage() {
                 <Line
                   type="monotone"
                   dataKey="overall"
-                  stroke="#2563eb"
+                  stroke="#ec0000"
                   strokeWidth={2.5}
-                  dot={{ r: 5, fill: "#2563eb" }}
+                  dot={{ r: 5, fill: "#ec0000" }}
                   activeDot={{ r: 7 }}
                   connectNulls
                 />

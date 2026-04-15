@@ -48,22 +48,28 @@ const sections = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const activeHref = sections
+    .flatMap(section => section.items)
+    .filter(item => item.exact ? pathname === item.href : pathname.startsWith(item.href))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href
 
   function isActive(href: string, exact = false) {
     if (exact) return pathname === href
-    return pathname.startsWith(href)
+    return activeHref === href
   }
 
   return (
-    <aside className="w-60 h-full bg-gray-950 text-gray-100 flex flex-col">
+    <aside className="w-64 h-full bg-white text-gray-900 flex flex-col border-r border-gray-200 shadow-santander">
       {/* Branding */}
-      <Link href="/" className="px-5 py-5 border-b border-gray-800 hover:bg-gray-900 transition-colors">
+      <Link href="/" className="px-5 py-5 border-b border-gray-200 hover:bg-blue-50 transition-colors">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
-            <FlaskConical className="w-4 h-4 text-white" />
-          </div>
+          <img
+            src="/logo-santander.png"
+            alt="Santander"
+            className="h-8 w-auto shrink-0"
+          />
           <div>
-            <span className="text-sm font-bold tracking-tight">AgentEval</span>
+            <span className="text-sm font-bold tracking-tight text-gray-950">Santander AgentEval</span>
             <p className="text-xs text-gray-500 leading-tight">Plataforma de Avaliação</p>
           </div>
         </div>
@@ -73,7 +79,7 @@ export default function Sidebar() {
       <nav className="flex-1 px-3 py-4 space-y-5 overflow-y-auto">
         {sections.map((section) => (
           <div key={section.label}>
-            <p className="px-3 mb-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+            <p className="px-3 mb-1.5 text-xs font-semibold text-gray-500 uppercase tracking-normal">
               {section.label}
             </p>
             <div className="space-y-0.5">
@@ -87,11 +93,11 @@ export default function Sidebar() {
                     className={cn(
                       "flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                       active
-                        ? "bg-blue-600 text-white"
-                        : "text-gray-400 hover:bg-gray-800 hover:text-gray-100"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "text-gray-600 hover:bg-blue-50 hover:text-blue-700"
                     )}
                   >
-                    <Icon className="w-4 h-4 shrink-0" />
+                    <Icon className={cn("w-4 h-4 shrink-0", active ? "text-white" : "text-blue-600")} />
                     {item.label}
                   </Link>
                 )
@@ -102,8 +108,8 @@ export default function Sidebar() {
       </nav>
 
       {/* Rodapé */}
-      <div className="px-5 py-3 border-t border-gray-800">
-        <p className="text-xs text-gray-600">v0.2.0</p>
+      <div className="px-5 py-3 border-t border-gray-200">
+        <p className="text-xs text-gray-500">Santander Flame UI - v0.2.0</p>
       </div>
     </aside>
   )

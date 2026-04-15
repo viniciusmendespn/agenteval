@@ -1,3 +1,183 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --santander-red: #ec0000;
+  --santander-red-brand: #ea1d25;
+  --santander-red-dark: #c60000;
+  --santander-red-soft: #fff1f1;
+  --santander-ink: #111820;
+  --santander-muted: #66707a;
+  --santander-line: #dde1e6;
+  --santander-surface: #ffffff;
+  --santander-bg: #f7f8fa;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    color: var(--santander-ink);
+    background:
+      linear-gradient(180deg, rgba(236, 0, 0, 0.035), transparent 240px),
+      var(--santander-bg);
+    font-family: "Santander Micro Text", "Santander Text", Arial, Helvetica, sans-serif;
+    letter-spacing: 0;
+  }
+
+  h1,
+  h2,
+  h3 {
+    color: var(--santander-ink);
+    font-family: "Santander Headline", "Santander Micro Text", Arial, Helvetica, sans-serif;
+    letter-spacing: 0;
+  }
+
+  label {
+    color: #323a43;
+  }
+
+  ::selection {
+    background: rgba(236, 0, 0, 0.18);
+  }
+
+  input,
+  select,
+  textarea {
+    background-color: var(--santander-surface);
+    border-color: #c7cdd4;
+    border-radius: 0.25rem;
+    color: var(--santander-ink);
+    transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select {
+    min-height: 44px;
+  }
+
+  textarea {
+    min-height: 88px;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #8f99a3;
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: var(--santander-red);
+    box-shadow: 0 0 0 3px rgba(236, 0, 0, 0.14);
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    accent-color: var(--santander-red);
+  }
+
+  input[type="range"] {
+    accent-color: var(--santander-red);
+  }
+
+  table {
+    border-color: var(--santander-line);
+  }
+
+  thead {
+    background-color: #f7f8fa;
+  }
+
+  th {
+    color: #4b5560;
+    font-weight: 600;
+  }
+
+  a {
+    text-underline-offset: 3px;
+  }
+
+  .lucide {
+    color: var(--santander-red);
+    stroke-width: 1.75;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}
+
+@layer utilities {
+  .rounded-xl,
+  .rounded-2xl {
+    border-radius: 0.5rem;
+  }
+
+  .shadow-lg,
+  .shadow-xl,
+  .shadow-2xl {
+    box-shadow: 0 10px 30px rgba(17, 24, 32, 0.1);
+  }
+
+  .flame-card {
+    border: 1px solid var(--santander-line);
+    border-radius: 0.5rem;
+    background: #fff;
+    box-shadow: 0 8px 24px rgba(17, 24, 32, 0.06);
+  }
+
+  .flame-icon-shell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #ffc7c7;
+    border-radius: 0.5rem;
+    background: #fff;
+    color: var(--santander-red);
+  }
+
+  .flame-focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(236, 0, 0, 0.14);
+  }
+
+  .flame-link {
+    color: var(--santander-red);
+    font-weight: 600;
+  }
+
+  .flame-link:hover {
+    color: var(--santander-red-dark);
+    text-decoration: underline;
+  }
+
+  .bg-white.border.border-gray-200,
+  .bg-white.border.border-gray-100 {
+    box-shadow: 0 8px 24px rgba(17, 24, 32, 0.045);
+  }
+
+  .bg-purple-100,
+  .bg-orange-100 {
+    background-color: var(--santander-red-soft);
+  }
+
+  .text-purple-600,
+  .text-purple-700,
+  .text-orange-600,
+  .text-orange-700 {
+    color: var(--santander-red);
+  }
+
+  .border-purple-200,
+  .border-orange-200 {
+    border-color: #ffc7c7;
+  }
+
+  .bg-purple-50\/30,
+  .bg-orange-50\/30,
+  .bg-indigo-50\/30 {
+    background-color: rgba(255, 241, 241, 0.8);
+  }
+}

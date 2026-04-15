@@ -4,12 +4,12 @@ import Sidebar from "@/components/Sidebar"
 import FloatingChat from "@/components/FloatingChat"
 import { Toaster } from "sonner"
 
-export const metadata: Metadata = { title: "AgentEval" }
+export const metadata: Metadata = { title: "Santander AgentEval" }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <body className="flex bg-gray-50 h-screen overflow-hidden">
+      <body className="flex bg-gray-50 h-screen overflow-hidden antialiased">
         <div className="sticky top-0 h-screen shrink-0">
           <Sidebar />
         </div>

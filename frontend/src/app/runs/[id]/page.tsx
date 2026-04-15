@@ -96,7 +96,7 @@ function MetricBreakdownCard({ breakdown }: { breakdown: RunBreakdown }) {
                 <PolarGrid stroke="#e5e7eb" />
                 <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: "#6b7280" }} />
                 <Tooltip formatter={(v) => [`${v}%`, "Score"]} />
-                <Radar dataKey="score" stroke="#2563eb" fill="#2563eb" fillOpacity={0.15} strokeWidth={2} />
+                <Radar dataKey="score" stroke="#ec0000" fill="#ec0000" fillOpacity={0.15} strokeWidth={2} />
               </RadarChart>
             </ResponsiveContainer>
           </div>

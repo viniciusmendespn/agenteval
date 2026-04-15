@@ -11,17 +11,15 @@ function KpiCard({
   icon: Icon,
   label,
   value,
-  color,
 }: {
   icon: React.ElementType
   label: string
   value: number | string
-  color: string
 }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-4">
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${color}`}>
-        <Icon className="w-5 h-5" />
+      <div className="flame-icon-shell w-11 h-11">
+        <Icon className="w-5 h-5 text-blue-600" />
       </div>
       <div>
         <p className="text-2xl font-bold text-gray-900">{value}</p>
@@ -155,10 +153,10 @@ export default function DashboardPage() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard icon={Bot}          label="Agentes"        value={data?.totals.agents ?? 0}      color="bg-blue-100 text-blue-600" />
-        <KpiCard icon={FlaskConical} label="Casos de teste"  value={data?.totals.test_cases ?? 0} color="bg-purple-100 text-purple-600" />
-        <KpiCard icon={Play}         label="Execuções"       value={data?.totals.runs ?? 0}        color="bg-green-100 text-green-600" />
-        <KpiCard icon={Database}     label="Datasets"        value={data?.totals.datasets ?? 0}   color="bg-orange-100 text-orange-600" />
+        <KpiCard icon={Bot}          label="Agentes"        value={data?.totals.agents ?? 0} />
+        <KpiCard icon={FlaskConical} label="Casos de teste"  value={data?.totals.test_cases ?? 0} />
+        <KpiCard icon={Play}         label="Execuções"       value={data?.totals.runs ?? 0} />
+        <KpiCard icon={Database}     label="Datasets"        value={data?.totals.datasets ?? 0} />
       </div>
 
       {/* Score + Gráfico */}
@@ -218,16 +216,16 @@ export default function DashboardPage() {
           {trend.length >= 2 ? (
             <ResponsiveContainer width="100%" height={180}>
               <LineChart data={trend} margin={{ top: 4, right: 8, bottom: 0, left: -20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#eef0f2" />
                 <XAxis dataKey="run_id" tick={{ fontSize: 11 }} tickFormatter={(v) => `#${v}`} />
                 <YAxis tick={{ fontSize: 11 }} domain={[0, 1]} tickFormatter={(v) => `${Math.round(v*100)}%`} />
                 <Tooltip content={<CustomTooltip />} />
                 <Line
                   type="monotone"
                   dataKey="score"
-                  stroke="#2563eb"
+                  stroke="#ec0000"
                   strokeWidth={2}
-                  dot={{ fill: "#2563eb", r: 3 }}
+                  dot={{ fill: "#ec0000", r: 3 }}
                   activeDot={{ r: 5 }}
                 />
               </LineChart>

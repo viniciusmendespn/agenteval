@@ -91,7 +91,7 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
         <div className="flex items-center gap-2 px-6 py-3 border-b border-gray-100 text-xs text-gray-400">
           {(["upload", "mapping", "confirm"] as Step[]).map((s, i) => (
             <span key={s} className="flex items-center gap-2">
-              <span className={`font-medium ${step === s ? "text-blue-600" : step === "confirm" && s !== "confirm" ? "text-green-600" : ""}`}>
+              <span className={`font-medium ${step === s ? "text-blue-600" : step === "confirm" && s !== "confirm" ? "text-blue-600" : ""}`}>
                 {i + 1}. {s === "upload" ? "Upload" : s === "mapping" ? "Mapeamento" : "Concluído"}
               </span>
               {i < 2 && <ChevronRight className="w-3 h-3" />}
@@ -107,7 +107,7 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
                 Selecione um arquivo JSON, JSONL ou JSONL.GZ para adicionar ao dataset. Os novos registros serão adicionados aos existentes.
               </p>
               <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-lg p-8 cursor-pointer transition-colors ${loading ? "border-gray-200 bg-gray-50 cursor-not-allowed" : "border-gray-300 hover:border-blue-400 hover:bg-blue-50/30"}`}>
-                <Upload className={`w-8 h-8 mb-3 ${loading ? "text-gray-300" : "text-gray-400"}`} />
+                <Upload className={`w-8 h-8 mb-3 ${loading ? "text-gray-300" : "text-blue-600"}`} />
                 <span className="text-sm font-medium text-gray-700">
                   {loading ? "Analisando arquivo..." : "Clique para selecionar"}
                 </span>
@@ -217,8 +217,8 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
           {/* STEP 3: Done */}
           {step === "confirm" && (
             <div className="text-center py-4">
-              <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-                <Check className="w-6 h-6 text-green-600" />
+              <div className="flame-icon-shell w-12 h-12 mx-auto mb-4">
+                <Check className="w-6 h-6 text-blue-600" />
               </div>
               <p className="text-base font-semibold text-gray-900">Dados adicionados!</p>
               <p className="text-sm text-gray-500 mt-1">
