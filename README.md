@@ -177,6 +177,28 @@ agenteval/
 
 ## Atualizando o sistema
 
+### Primeira vez — migrando de uma versão sem o sistema de versionamento
+
+Se você já tinha o projeto clonado antes do sistema de versionamento ser introduzido, faça este update manual uma única vez:
+
+```bash
+# 1. Puxar as mudanças do repositório
+git pull
+
+# 2. Instalar o hook de versionamento nesta máquina
+bash setup-hooks.sh
+
+# 3. Instalar dependências atualizadas
+pip install -r backend/requirements.txt
+cd frontend && npm install && cd ..
+
+# 4. Reiniciar o backend e o frontend
+```
+
+A partir daqui, todos os updates futuros são feitos com `bash update.sh`.
+
+---
+
 ### Em uma nova máquina (após clonar)
 
 Execute uma única vez para instalar os git hooks locais:
