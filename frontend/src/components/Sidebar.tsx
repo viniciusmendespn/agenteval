@@ -59,7 +59,7 @@ export default function Sidebar() {
   useEffect(() => {
     fetch(`${API}/version`)
       .then(r => r.json())
-      .then(d => setVersion(`v${d.version} · build ${d.build}`))
+      .then(d => { if (d.version) setVersion(`v${d.version} · build ${d.build}`) })
       .catch(() => {})
   }, [])
   const activeHref = sections
