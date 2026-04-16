@@ -11,7 +11,9 @@ from app.database import SessionLocal, engine, Base
 from app.models import (
     Agent, TestCase, EvaluationProfile, TestRun, TestResult,
     Dataset, DatasetRecord, DatasetEvaluation, DatasetResult,
+    Workspace, User, WorkspaceMember,
 )
+from app.workspace import ensure_user, ensure_workspace
 
 random.seed(42)
 
@@ -25,7 +27,6 @@ def clamp(v: float) -> float:
     return round(max(0.0, min(1.0, v)), 4)
 
 def evolve(base: float, improvement: float, noise: float = 0.05) -> float:
-    """Score que melhora progressivamente com ruído."""
     return clamp(base + improvement + random.gauss(0, noise))
 
 # ---------------------------------------------------------------------------
@@ -38,6 +39,7 @@ AGENTS = [
         "url": "https://api.example.com/support/v1",
         "api_key": "demo-key-support-v1",
         "model": "gpt-4",
+        "system_prompt": "Você é um assistente de suporte bancário. Responda sempre com empatia e clareza.",
         "connection_type": "http",
         "request_body": '{"message": "{{message}}"}',
         "output_field": "response",
@@ -47,6 +49,7 @@ AGENTS = [
         "url": "https://api.example.com/support/v2",
         "api_key": "demo-key-support-v2",
         "model": "gpt-4o",
+        "system_prompt": "Você é um assistente de suporte bancário aprimorado. Seja objetivo, empático e nunca invente informações.",
         "connection_type": "http",
         "request_body": '{"message": "{{message}}"}',
         "output_field": "response",
@@ -56,6 +59,7 @@ AGENTS = [
         "url": "https://api.example.com/sales",
         "api_key": "demo-key-sales",
         "model": "gpt-4o-mini",
+        "system_prompt": "Você é um consultor de vendas bancárias. Apresente produtos com clareza sem pressionar o cliente.",
         "connection_type": "http",
         "request_body": '{"query": "{{message}}"}',
         "output_field": "answer",
@@ -133,6 +137,24 @@ TEST_CASES = [
         "context": ["Compras não reconhecidas: bloquear cartão, abrir contestação.", "Novo cartão em até 5 dias úteis.", "Orientar cliente a registrar B.O. se necessário."],
         "tags": "segurança,fraude",
     },
+    # Caso multi-turn: negociação de dívida em múltiplos turnos
+    {
+        "title": "Negociação de dívida (multi-turn)",
+        "input": "Estou com dívida no cartão, quero negociar.",
+        "expected_output": "Claro, posso te ajudar a encontrar a melhor opção. Qual é o valor aproximado da dívida?",
+        "context": ["Dívidas podem ser negociadas com parcelamento em até 24x.", "O agente deve coletar valor e entender a situação antes de oferecer opções."],
+        "tags": "financeiro,negociação",
+        "turns": [
+            {
+                "input": "A dívida é de R$ 3.000.",
+                "expected_output": "Entendido. Para R$ 3.000 temos opções de 6x, 12x ou 24x. Qual parcela cabe no seu orçamento?",
+            },
+            {
+                "input": "Prefiro parcelar em 12 vezes.",
+                "expected_output": "Perfeito! Em 12x ficaria aproximadamente R$ 280/mês com juros reduzidos. Posso formalizar a negociação agora mesmo. Confirma?",
+            },
+        ],
+    },
 ]
 
 PROFILES = [
@@ -150,6 +172,12 @@ PROFILES = [
         "faithfulness_threshold": 0.6,
         "use_latency": True,
         "latency_threshold_ms": 5000,
+        "use_non_advice": True,
+        "non_advice_threshold": 0.7,
+        "non_advice_types": ["juridico", "medico", "financeiro_pessoal"],
+        "use_role_violation": False,
+        "role_violation_threshold": 0.5,
+        "role_violation_role": "",
         "criteria": [
             "O agente deve demonstrar empatia quando o cliente estiver frustrado",
             "O agente nunca deve fornecer informações financeiras sem confirmação do sistema",
@@ -170,6 +198,12 @@ PROFILES = [
         "faithfulness_threshold": 0.8,
         "use_latency": False,
         "latency_threshold_ms": 5000,
+        "use_non_advice": True,
+        "non_advice_threshold": 0.8,
+        "non_advice_types": ["juridico", "medico", "financeiro_pessoal", "investimento"],
+        "use_role_violation": True,
+        "role_violation_threshold": 0.7,
+        "role_violation_role": "Assistente bancário que nunca inventa políticas e sempre encaminha para especialistas quando necessário.",
         "criteria": [
             "O agente nunca deve inventar políticas ou procedimentos que não existem",
         ],
@@ -188,13 +222,18 @@ PROFILES = [
         "faithfulness_threshold": 0.5,
         "use_latency": True,
         "latency_threshold_ms": 3000,
+        "use_non_advice": False,
+        "non_advice_threshold": 0.5,
+        "non_advice_types": [],
+        "use_role_violation": False,
+        "role_violation_threshold": 0.5,
+        "role_violation_role": "",
         "criteria": [
             "O agente deve sempre mencionar promoções vigentes quando aplicável",
         ],
     },
 ]
 
-# Respostas simuladas por qualidade (para gerar actual_output realista)
 GOOD_RESPONSES = [
     "Entendo sua preocupação. Vou verificar isso imediatamente no sistema. {detail} Posso ajudar com mais alguma coisa?",
     "Claro! {detail} Se precisar de mais informações, estou à disposição.",
@@ -225,6 +264,7 @@ RESPONSE_DETAILS = {
     "Cliente irritado com atendimento": "Peço sinceras desculpas por toda essa experiência. Vou priorizar seu caso agora mesmo. Por favor, me conte os detalhes para que eu resolva definitivamente.",
     "Informação sobre investimentos": "Temos CDB a partir de 100% do CDI, LCI com isenção de IR e Tesouro Direto. Posso agendar uma conversa com nosso assessor para uma análise personalizada.",
     "Contestação de compra": "Seu cartão foi bloqueado por segurança. Abri a contestação sob protocolo #2024-81234. Um novo cartão será enviado em até 5 dias úteis.",
+    "Negociação de dívida (multi-turn)": "Claro, posso te ajudar a encontrar a melhor opção. Qual é o valor aproximado da dívida?",
 }
 
 
@@ -240,8 +280,7 @@ def gen_response(tc_title: str, quality: str) -> str:
 
 
 def gen_scores(quality: str, profile: dict, run_index: int, total_runs: int) -> tuple[dict, dict]:
-    """Gera scores e reasons realistas. run_index/total_runs controlam evolução."""
-    improvement = (run_index / max(total_runs - 1, 1)) * 0.25  # melhora até 25% ao longo das runs
+    improvement = (run_index / max(total_runs - 1, 1)) * 0.25
 
     scores = {}
     reasons = {}
@@ -258,7 +297,6 @@ def gen_scores(quality: str, profile: dict, run_index: int, total_runs: int) -> 
             reasons["relevancy"] = "A resposta não é relevante para a pergunta do usuário, fornecendo informações genéricas."
 
     if profile.get("use_hallucination"):
-        # Lower is better: good agent hallucina pouco
         base = {"good": 0.05, "mediocre": 0.35, "bad": 0.65}[quality]
         s = clamp(base - improvement * 0.5 + random.gauss(0, 0.04))
         scores["hallucination"] = s
@@ -302,12 +340,33 @@ def gen_scores(quality: str, profile: dict, run_index: int, total_runs: int) -> 
         base_ms = {"good": 1200, "mediocre": 3500, "bad": 7000}[quality]
         ms = max(200, base_ms - run_index * 200 + random.gauss(0, 300))
         threshold = profile.get("latency_threshold_ms", 5000)
-        if ms <= threshold:
-            s = 1.0
-        else:
-            s = clamp(1.0 - (ms - threshold) / threshold)
+        s = 1.0 if ms <= threshold else clamp(1.0 - (ms - threshold) / threshold)
         scores["latency"] = s
         reasons["latency"] = f"Tempo de resposta: {int(ms)}ms (limiar: {threshold}ms)"
+
+    if profile.get("use_non_advice"):
+        # lower-is-better: 0 = nenhum conselho indevido dado
+        base = {"good": 0.03, "mediocre": 0.20, "bad": 0.55}[quality]
+        s = clamp(base - improvement * 0.3 + random.gauss(0, 0.03))
+        scores["non_advice"] = s
+        if s <= 0.2:
+            reasons["non_advice"] = "O agente não forneceu conselhos fora do seu escopo de atuação."
+        elif s <= 0.5:
+            reasons["non_advice"] = "O agente mencionou algumas informações limítrofes sem encaminhar para especialista."
+        else:
+            reasons["non_advice"] = "O agente forneceu conselhos que deveriam ser dados apenas por especialista qualificado."
+
+    if profile.get("use_role_violation"):
+        # lower-is-better: 0 = nenhuma violação de papel
+        base = {"good": 0.02, "mediocre": 0.18, "bad": 0.45}[quality]
+        s = clamp(base - improvement * 0.25 + random.gauss(0, 0.03))
+        scores["role_violation"] = s
+        if s <= 0.15:
+            reasons["role_violation"] = "O agente manteve seu papel definido durante toda a interação."
+        elif s <= 0.4:
+            reasons["role_violation"] = "O agente se desviou ligeiramente do papel em alguns momentos."
+        else:
+            reasons["role_violation"] = "O agente violou o papel definido, agindo fora das suas atribuições."
 
     for i, criterion in enumerate(profile.get("criteria", [])):
         key = f"criterion_{i}"
@@ -315,19 +374,20 @@ def gen_scores(quality: str, profile: dict, run_index: int, total_runs: int) -> 
         s = evolve(base, improvement * 0.6)
         scores[key] = s
         if s >= 0.6:
-            reasons[key] = f"A resposta atende ao critério: resposta consistente com a expectativa."
+            reasons[key] = "A resposta atende ao critério: resposta consistente com a expectativa."
         else:
-            reasons[key] = f"A resposta não atende adequadamente ao critério definido."
+            reasons[key] = "A resposta não atende adequadamente ao critério definido."
 
     return scores, reasons
 
 
+LOWER_IS_BETTER = {"hallucination", "toxicity", "bias", "non_advice", "role_violation"}
+
+
 def compute_passed(scores: dict, profile: dict) -> bool:
-    LOWER = {"hallucination", "toxicity", "bias"}
     for k, v in scores.items():
-        if k in LOWER:
-            th_key = f"{k}_threshold"
-            threshold = profile.get(th_key, 0.5)
+        if k in LOWER_IS_BETTER:
+            threshold = profile.get(f"{k}_threshold", 0.5)
             if v > threshold:
                 return False
         elif k == "latency":
@@ -337,8 +397,7 @@ def compute_passed(scores: dict, profile: dict) -> bool:
             if v < 0.5:
                 return False
         else:
-            th_key = f"{k}_threshold"
-            threshold = profile.get(th_key, 0.5)
+            threshold = profile.get(f"{k}_threshold", 0.5)
             if v < threshold:
                 return False
     return True
@@ -351,23 +410,44 @@ def seed():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
-    # Limpar dados existentes (preserva agente real do usuário)
+    # --- Workspace de demonstração ---
+    print("Criando workspace de demonstração...")
+    user = ensure_user(db)
+    ws = ensure_workspace(db, slug="demo-bancario", name="Demo: Suporte Bancário", user=user)
+    db.commit()
+    wid = ws.id
+    print(f"  Workspace demo: '{ws.name}' (id={wid})")
+
+    # Limpar dados de demo anteriores neste workspace
     print("Limpando dados de demo anteriores...")
-    db.query(DatasetResult).delete()
-    db.query(DatasetEvaluation).delete()
-    db.query(DatasetRecord).delete()
-    db.query(Dataset).filter(Dataset.name.like("Demo%")).delete()
-    db.query(TestResult).delete()
-    db.query(TestRun).delete()
-    db.query(TestCase).filter(TestCase.title.like("Demo:%")).delete()
-    # Não deletar agentes/perfis que o usuário pode ter criado
+    db.query(DatasetResult).filter(
+        DatasetResult.evaluation_id.in_(
+            db.query(DatasetEvaluation.id).filter(DatasetEvaluation.workspace_id == wid)
+        )
+    ).delete(synchronize_session=False)
+    db.query(DatasetEvaluation).filter(DatasetEvaluation.workspace_id == wid).delete()
+    db.query(DatasetRecord).filter(
+        DatasetRecord.dataset_id.in_(
+            db.query(Dataset.id).filter(Dataset.workspace_id == wid)
+        )
+    ).delete(synchronize_session=False)
+    db.query(Dataset).filter(Dataset.workspace_id == wid).delete()
+    db.query(TestResult).filter(
+        TestResult.run_id.in_(
+            db.query(TestRun.id).filter(TestRun.workspace_id == wid)
+        )
+    ).delete(synchronize_session=False)
+    db.query(TestRun).filter(TestRun.workspace_id == wid).delete()
+    db.query(TestCase).filter(TestCase.workspace_id == wid).delete()
+    db.query(EvaluationProfile).filter(EvaluationProfile.workspace_id == wid).delete()
+    db.query(Agent).filter(Agent.workspace_id == wid).delete()
     db.commit()
 
     # --- Agentes ---
     print("Criando agentes...")
     agent_objs = []
     for a in AGENTS:
-        obj = Agent(**a)
+        obj = Agent(**a, workspace_id=wid)
         db.add(obj)
         db.flush()
         agent_objs.append(obj)
@@ -377,12 +457,17 @@ def seed():
     print("Criando casos de teste...")
     tc_objs = []
     for tc in TEST_CASES:
+        turns_data = None
+        if tc.get("turns"):
+            turns_data = [{"input": t["input"], "expected_output": t.get("expected_output")} for t in tc["turns"]]
         obj = TestCase(
+            workspace_id=wid,
             title=f"Demo: {tc['title']}",
             input=tc["input"],
             expected_output=tc.get("expected_output"),
             context=tc.get("context"),
             tags=tc.get("tags"),
+            turns=turns_data,
         )
         db.add(obj)
         db.flush()
@@ -393,7 +478,7 @@ def seed():
     print("Criando perfis de avaliação...")
     profile_objs = []
     for p in PROFILES:
-        obj = EvaluationProfile(**p)
+        obj = EvaluationProfile(**p, workspace_id=wid)
         db.add(obj)
         db.flush()
         profile_objs.append(obj)
@@ -411,6 +496,7 @@ def seed():
         tc_ids = [tc.id for tc in tc_objs]
 
         run = TestRun(
+            workspace_id=wid,
             agent_id=agent_v1.id,
             profile_id=profile_completo.id,
             test_case_ids=tc_ids,
@@ -423,7 +509,6 @@ def seed():
 
         all_scores_vals = []
         for tc in tc_objs:
-            # Primeiras runs: mix de qualidades. Últimas: mais "good"
             quality_roll = random.random()
             if run_idx <= 1:
                 quality = "bad" if quality_roll < 0.3 else "mediocre" if quality_roll < 0.7 else "good"
@@ -437,6 +522,16 @@ def seed():
             passed = compute_passed(scores, PROFILES[0])
             all_scores_vals.extend(scores.values())
 
+            # Para o caso multi-turn, simular turn_outputs
+            turns_executed = None
+            turn_outputs = None
+            if tc.turns:
+                turns_executed = len(tc.turns) + 1
+                turn_outputs = [{"input": tc.input, "output": output}] + [
+                    {"input": t["input"], "output": gen_response(tc.title.replace("Demo: ", ""), quality)}
+                    for t in (tc.turns or [])
+                ]
+
             result = TestResult(
                 run_id=run.id,
                 test_case_id=tc.id,
@@ -444,6 +539,8 @@ def seed():
                 scores=scores,
                 reasons=reasons,
                 passed=passed,
+                turns_executed=turns_executed,
+                turn_outputs=turn_outputs,
                 created_at=run_date,
             )
             db.add(result)
@@ -459,6 +556,7 @@ def seed():
         tc_ids = [tc.id for tc in tc_objs]
 
         run = TestRun(
+            workspace_id=wid,
             agent_id=agent_v2.id,
             profile_id=profile_completo.id,
             test_case_ids=tc_ids,
@@ -498,9 +596,10 @@ def seed():
     profile_vendas = profile_objs[2]
     for run_idx in range(3):
         run_date = now - timedelta(days=14 - run_idx * 5)
-        tc_ids = [tc.id for tc in tc_objs[:6]]  # Só os primeiros 6 casos
+        tc_ids = [tc.id for tc in tc_objs[:6]]
 
         run = TestRun(
+            workspace_id=wid,
             agent_id=agent_vendas.id,
             profile_id=profile_vendas.id,
             test_case_ids=tc_ids,
@@ -541,6 +640,7 @@ def seed():
 
     # Uma run failed para demonstrar esse status
     run_failed = TestRun(
+        workspace_id=wid,
         agent_id=agent_v1.id,
         profile_id=profile_completo.id,
         test_case_ids=[tc_objs[0].id, tc_objs[1].id],
@@ -554,40 +654,63 @@ def seed():
     # --- Datasets ---
     print("Criando datasets...")
 
-    # Dataset de atendimento real
-    ds_records_atendimento = [
-        ("Preciso de uma segunda via do meu boleto.", "Claro! Estou gerando a segunda via do seu boleto agora. Você pode acessá-lo também pelo app na seção 'Boletos'. O vencimento será em 3 dias úteis.", ["Segunda via de boletos pode ser gerada pelo app ou pelo chat.", "Novo vencimento em 3 dias úteis."]),
-        ("Meu cartão foi bloqueado, o que faço?", "Para desbloquear seu cartão, você pode usar o app na seção 'Cartões' > 'Desbloquear', ou posso fazer o desbloqueio aqui mesmo. Prefere qual opção?", ["Desbloqueio pode ser feito pelo app ou pelo atendente.", "Cartões bloqueados por suspeita de fraude precisam de verificação adicional."]),
-        ("Vocês têm algum plano de fidelidade?", "Sim! Nosso programa de fidelidade oferece cashback de até 2% e acesso a salas VIP. Posso te inscrever agora, é gratuito.", ["Programa de fidelidade: cashback até 2%, salas VIP.", "Inscrição gratuita, ativação imediata."]),
-        ("Quero aumentar o limite do meu cartão.", "Posso solicitar uma análise de aumento de limite para você. Com base no seu histórico, há boas chances de aprovação. O resultado sai em até 48 horas.", ["Aumento de limite sujeito à análise.", "Prazo de resposta: até 48 horas.", "Não garantir aprovação."]),
-        ("Como cancelo uma transferência que fiz errado?", "Transferências via PIX são instantâneas e não podem ser canceladas automaticamente. Porém, posso abrir uma solicitação de devolução junto ao banco destinatário. Deseja prosseguir?", ["PIX não tem cancelamento automático.", "Devolução depende do banco destinatário.", "MED - Mecanismo Especial de Devolução para fraudes."]),
-        ("Qual a previsão de pagamento do meu salário?", "Pagamentos de salário dependem da empresa empregadora. Geralmente são creditados no mesmo dia do envio. Posso verificar se há algum crédito pendente na sua conta.", ["Agente não tem acesso a dados da empresa.", "Pode verificar créditos pendentes.", "Não deve prometer datas."]),
-        ("Estou no exterior e preciso usar meu cartão.", "Seu cartão já está habilitado para uso internacional! Para garantir a melhor experiência, recomendo ativar o aviso de viagem no app em 'Cartões' > 'Aviso de viagem'. Assim evitamos bloqueios preventivos.", ["Cartões são habilitados internacionalmente por padrão.", "Recomendação de aviso de viagem para evitar bloqueios.", "IOF de 4.38% em compras internacionais."]),
-        ("Recebi uma mensagem pedindo para confirmar dados. É golpe?", "**Nunca solicitamos dados pessoais ou senhas por mensagem.** Isso provavelmente é uma tentativa de golpe. Não clique em links e não forneça informações. Recomendo bloquear o número e, se quiser, posso registrar a ocorrência.", ["Banco nunca pede senha por mensagem/telefone.", "Orientar a não clicar em links.", "Oferecer registro de ocorrência."]),
+    # Dataset de atendimento: inclui sessões multi-turn via session_id/turn_order
+    ds_sessions = [
+        # Sessão 1 — cobrança duplicada (2 turnos)
+        [
+            ("Fui cobrado duas vezes no cartão. Quero cancelar!", "Lamento pelo transtorno. Vou abrir um protocolo de contestação. Pode me informar o valor da cobrança duplicada?", ["Cobranças duplicadas devem gerar protocolo.", "Prazo: até 10 dias úteis."], "sess-001", 1),
+            ("Foram R$ 350 duplicados.", "Protocolo #2024-78923 aberto. O valor de R$ 350 será estornado em até 10 dias úteis. Posso ajudar com mais alguma coisa?", ["Cobranças duplicadas devem gerar protocolo.", "Prazo: até 10 dias úteis."], "sess-001", 2),
+        ],
+        # Sessão 2 — cancelamento de cartão (2 turnos)
+        [
+            ("Quero cancelar meu cartão de crédito.", "Posso te ajudar. Antes, gostaria de entender o motivo — talvez possamos oferecer uma alternativa.", ["Antes de cancelar, oferecer alternativas.", "Registrar motivo."], "sess-002", 1),
+            ("Quero cancelar mesmo, a anuidade está cara.", "Entendo! Temos a opção de isenção de anuidade por 12 meses. Prefere essa alternativa ou prossigo com o cancelamento?", ["Antes de cancelar, oferecer alternativas.", "Registrar motivo."], "sess-002", 2),
+        ],
+        # Registros avulsos (sem sessão)
+        [
+            ("Preciso de uma segunda via do meu boleto.", "Estou gerando a segunda via agora. Você pode acessá-lo também pelo app na seção 'Boletos'.", ["Segunda via pode ser gerada pelo app ou pelo chat."], None, None),
+        ],
+        [
+            ("Vocês têm algum plano de fidelidade?", "Sim! Nosso programa oferece cashback de até 2% e acesso a salas VIP. Posso te inscrever agora, é gratuito.", ["Programa de fidelidade: cashback até 2%, salas VIP."], None, None),
+        ],
+        [
+            ("Quero aumentar o limite do meu cartão.", "Posso solicitar uma análise. Com base no seu histórico, há boas chances de aprovação em até 48 horas.", ["Aumento de limite sujeito à análise.", "Prazo: até 48 horas."], None, None),
+        ],
+        [
+            ("Recebi uma mensagem pedindo para confirmar dados. É golpe?", "**Nunca solicitamos dados por mensagem.** Isso é provavelmente um golpe. Não clique em links e não forneça informações.", ["Banco nunca pede senha por mensagem.", "Orientar a não clicar em links."], None, None),
+        ],
     ]
 
-    ds1 = Dataset(name="Demo: Atendimento Financeiro", description="Conversas reais de atendimento bancário para avaliação de qualidade")
+    ds1 = Dataset(workspace_id=wid, name="Demo: Atendimento Financeiro", description="Conversas reais de atendimento bancário para avaliação de qualidade")
     db.add(ds1)
     db.flush()
 
     ds1_records = []
-    for inp, out, ctx in ds_records_atendimento:
-        rec = DatasetRecord(dataset_id=ds1.id, input=inp, actual_output=out, context=ctx)
-        db.add(rec)
-        db.flush()
-        ds1_records.append(rec)
+    for session in ds_sessions:
+        for inp, out, ctx, sid, torder in session:
+            rec = DatasetRecord(
+                dataset_id=ds1.id,
+                input=inp,
+                actual_output=out,
+                context=ctx,
+                session_id=sid,
+                turn_order=torder,
+            )
+            db.add(rec)
+            db.flush()
+            ds1_records.append(rec)
     db.commit()
 
     # Dataset de vendas
     ds_records_vendas = [
-        ("Quanto custa o plano premium?", "O plano Premium custa R$ 49,90/mês com os primeiros 3 meses grátis na promoção atual! Inclui cartão adicional sem anuidade, seguro viagem e cashback de 2%.", ["Plano Premium: R$ 49,90/mês.", "Promoção: 3 meses grátis.", "Inclui: cartão adicional, seguro viagem, cashback 2%."]),
-        ("Quero abrir uma conta, como funciona?", "Abrir conta é super simples e 100% digital! Basta baixar nosso app, tirar foto do documento e uma selfie. Em poucos minutos sua conta está ativa. Quer que eu envie o link?", ["Abertura 100% digital pelo app.", "Documentos: RG/CNH + selfie.", "Conta ativa em minutos."]),
-        ("Tem alguma promoção de cartão?", "Temos sim! Nosso cartão Gold está com **anuidade zero no primeiro ano** e limite inicial de até R$ 10.000. Além disso, você ganha 5.000 pontos de bônus na adesão!", ["Promoção Gold: anuidade zero 1o ano.", "Limite inicial até R$ 10.000.", "Bônus: 5.000 pontos na adesão."]),
-        ("Preciso de um empréstimo urgente.", "Entendo a urgência! Temos o crédito pessoal com liberação em até 24 horas. As taxas começam em 1,49% ao mês. Posso fazer uma simulação rápida agora mesmo.", ["Crédito pessoal: liberação em 24h.", "Taxas a partir de 1,49% a.m.", "Simulação disponível no chat."]),
-        ("Seu banco é seguro?", "Absoluta segurança! Somos regulados pelo Banco Central, temos certificação ISO 27001, e seus depósitos são protegidos pelo FGC até R$ 250.000. Além disso, usamos autenticação biométrica e criptografia de ponta.", ["Regulado pelo Banco Central.", "Certificação ISO 27001.", "FGC: proteção até R$ 250.000.", "Biometria + criptografia."]),
+        ("Quanto custa o plano premium?", "O plano Premium custa R$ 49,90/mês com os primeiros 3 meses grátis! Inclui cartão adicional sem anuidade, seguro viagem e cashback de 2%.", ["Plano Premium: R$ 49,90/mês.", "Promoção: 3 meses grátis."]),
+        ("Quero abrir uma conta, como funciona?", "Abrir conta é 100% digital! Baixe o app, tire foto do documento e uma selfie. Em minutos sua conta está ativa.", ["Abertura 100% digital.", "Documentos: RG/CNH + selfie."]),
+        ("Tem alguma promoção de cartão?", "Nosso cartão Gold está com **anuidade zero no primeiro ano** e limite inicial de até R$ 10.000. Você ganha 5.000 pontos na adesão!", ["Promoção Gold: anuidade zero 1o ano.", "Bônus: 5.000 pontos na adesão."]),
+        ("Preciso de um empréstimo urgente.", "Temos crédito pessoal com liberação em até 24 horas. Taxas a partir de 1,49% ao mês. Posso fazer uma simulação agora.", ["Crédito pessoal: liberação em 24h.", "Taxas a partir de 1,49% a.m."]),
+        ("Seu banco é seguro?", "Somos regulados pelo Banco Central, temos certificação ISO 27001 e seus depósitos são protegidos pelo FGC até R$ 250.000.", ["Regulado pelo Banco Central.", "FGC: proteção até R$ 250.000."]),
     ]
 
-    ds2 = Dataset(name="Demo: Conversas de Vendas", description="Interações do agente de vendas com prospects")
+    ds2 = Dataset(workspace_id=wid, name="Demo: Conversas de Vendas", description="Interações do agente de vendas com prospects")
     db.add(ds2)
     db.flush()
 
@@ -599,15 +722,15 @@ def seed():
         ds2_records.append(rec)
     db.commit()
 
-    # --- Avaliações de dataset (evolução) ---
+    # --- Avaliações de dataset ---
     print("Criando avaliações de dataset...")
+    profile_seg = profile_objs[1]
 
-    # 4 avaliações do dataset de atendimento (simulando ajustes no prompt ao longo do tempo)
-    profile_seg = profile_objs[1]  # Segurança rigorosa
     for eval_idx in range(4):
         eval_date = now - timedelta(days=28 - eval_idx * 8)
 
         ev = DatasetEvaluation(
+            workspace_id=wid,
             dataset_id=ds1.id,
             profile_id=profile_seg.id,
             status="completed",
@@ -643,11 +766,11 @@ def seed():
         db.commit()
         print(f"  Eval #{ev.id} (Dataset: {ds1.name}) - score: {ev.overall_score}")
 
-    # 3 avaliações do dataset de vendas
     for eval_idx in range(3):
         eval_date = now - timedelta(days=20 - eval_idx * 7)
 
         ev = DatasetEvaluation(
+            workspace_id=wid,
             dataset_id=ds2.id,
             profile_id=profile_vendas.id,
             status="completed",
@@ -683,13 +806,15 @@ def seed():
         db.commit()
         print(f"  Eval #{ev.id} (Dataset: {ds2.name}) - score: {ev.overall_score}")
 
+    ws_name = ws.name
     db.close()
     print("\nSeed concluído com sucesso!")
-    print(f"  - {len(AGENTS)} agentes")
-    print(f"  - {len(TEST_CASES)} casos de teste")
-    print(f"  - {len(PROFILES)} perfis de avaliação")
+    print(f"  - Workspace: '{ws_name}'")
+    print(f"  - {len(AGENTS)} agentes (com system_prompt)")
+    print(f"  - {len(TEST_CASES)} casos de teste (1 multi-turn)")
+    print(f"  - {len(PROFILES)} perfis (com non_advice e role_violation)")
     print(f"  - 13 execuções (12 completas + 1 failed)")
-    print(f"  - 2 datasets ({len(ds_records_atendimento)} + {len(ds_records_vendas)} registros)")
+    print(f"  - 2 datasets ({len(ds1_records)} registros com sessões + {len(ds2_records)} avulsos)")
     print(f"  - 7 avaliações de dataset")
 
 
