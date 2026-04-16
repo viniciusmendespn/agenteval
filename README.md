@@ -175,6 +175,57 @@ agenteval/
 
 ---
 
+## Atualizando o sistema
+
+### Em uma nova máquina (após clonar)
+
+Execute uma única vez para instalar os git hooks locais:
+
+```bash
+bash setup-hooks.sh
+```
+
+### Recebendo atualizações do repositório
+
+Execute o script de update na raiz do projeto (Git Bash no Windows):
+
+```bash
+bash update.sh
+```
+
+O script:
+1. Baixa as alterações com `git pull`
+2. Reinstala os git hooks nesta máquina
+3. Instala dependências Python e Node atualizadas
+4. Exibe a versão atual
+5. Instrui a reiniciar os serviços
+
+Após rodar `update.sh`, reinicie o backend e o frontend para que as mudanças entrem em vigor.
+
+### Aviso automático de nova versão
+
+Quando alguém fizer um commit e você tiver o sistema aberto em outra aba ou máquina, o frontend detecta automaticamente a mudança de versão a cada 3 minutos e exibe um banner amarelo no topo:
+
+> **Nova versão disponível (v1.0.X build N). Recarregue a página para aplicar as atualizações.**
+
+Clique em **Recarregar agora** ou simplesmente atualize a página manualmente.
+
+### Versionamento automático por commit
+
+O projeto usa versionamento semântico (`MAJOR.MINOR.PATCH`) com um número de build incremental.
+O hook `pre-commit` **incrementa o patch automaticamente** a cada `git commit`.
+
+Para bumpar versão minor ou major manualmente antes de commitar:
+
+```bash
+python scripts/bump_version.py minor   # 1.0.x → 1.1.0
+python scripts/bump_version.py major   # 1.x.x → 2.0.0
+```
+
+A versão atual fica visível no rodapé da sidebar do sistema.
+
+---
+
 ## Observações
 
 - O banco SQLite é criado automaticamente na primeira execução em `backend/agenteval.db`.

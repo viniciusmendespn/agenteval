@@ -1,0 +1,4 @@
+#!/bin/sh
+# Hook pre-commit: incrementa patch version a cada commit
+python scripts/bump_version.py 2>/dev/null || python3 scripts/bump_version.py 2>/dev/null || echo "[version] Aviso: python não encontrado, versão não atualizada"
+git add version.json

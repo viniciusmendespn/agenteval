@@ -3,6 +3,7 @@ import "./globals.css"
 import Sidebar from "@/components/Sidebar"
 import FloatingChat from "@/components/FloatingChat"
 import WorkspaceGate from "@/components/WorkspaceGate"
+import VersionChecker from "@/components/VersionChecker"
 import { Toaster } from "sonner"
 
 export const metadata: Metadata = { title: "Santander AgentEval" }
@@ -11,6 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR">
       <body className="flex bg-gray-50 h-screen overflow-hidden antialiased">
+        <VersionChecker />
         <WorkspaceGate>
           <div className="sticky top-0 h-screen shrink-0">
             <Sidebar />

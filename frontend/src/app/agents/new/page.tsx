@@ -45,6 +45,12 @@ export default function NewAgentPage() {
   const [systemPrompt, setSystemPrompt] = useState("")
   const [bodyError, setBodyError] = useState<string | null>(null)
 
+  const [useTokenCall, setUseTokenCall] = useState(false)
+  const [tokenUrl, setTokenUrl] = useState("")
+  const [tokenRequestBody, setTokenRequestBody] = useState("{}")
+  const [tokenOutputField, setTokenOutputField] = useState("token")
+  const [tokenHeaderName, setTokenHeaderName] = useState("Authorization")
+
   const [pingResult, setPingResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [pinging, setPinging] = useState(false)
   const [preview, setPreview] = useState<unknown | null>(null)
@@ -109,7 +115,15 @@ export default function NewAgentPage() {
     setLoading(true)
     setError(null)
     try {
-      await createAgent({ name, url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, system_prompt: systemPrompt || undefined })
+      await createAgent({
+        name, url, api_key: apiKey, connection_type: connectionType,
+        request_body: requestBody, output_field: outputField,
+        system_prompt: systemPrompt || undefined,
+        token_url: useTokenCall ? tokenUrl || undefined : undefined,
+        token_request_body: useTokenCall ? tokenRequestBody || undefined : undefined,
+        token_output_field: useTokenCall ? tokenOutputField || undefined : undefined,
+        token_header_name: useTokenCall ? tokenHeaderName || undefined : undefined,
+      })
       window.location.href = "/agents"
     } catch (e: any) {
       setError(e.message)
@@ -184,6 +198,48 @@ export default function NewAgentPage() {
               </button>
             ))}
           </div>
+        </section>
+
+        {/* Autenticação em dois passos */}
+        <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-700">Autenticação em dois passos <span className="font-normal text-gray-400">(opcional)</span></h2>
+            <button type="button" onClick={() => setUseTokenCall(v => !v)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useTokenCall ? "bg-blue-600" : "bg-gray-200"}`}>
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${useTokenCall ? "translate-x-4.5" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+          {useTokenCall && (
+            <div className="space-y-3 pt-1">
+              <p className="text-xs text-gray-400">
+                Antes de chamar o agente, faz uma requisição para obter um token dinâmico.
+                Use <code className="bg-gray-100 px-1 rounded">{"{{token}}"}</code> no body principal ou deixe a chave de API vazia para usar o token como Bearer automaticamente.
+              </p>
+              <div>
+                <label className={lbl}>URL do token *</label>
+                <input className={inp} value={tokenUrl} onChange={e => setTokenUrl(e.target.value)}
+                  placeholder="https://auth.exemplo.com/token" />
+              </div>
+              <div>
+                <label className={lbl}>Body da requisição de token</label>
+                <textarea className={`${inp} h-20 font-mono text-xs resize-y`}
+                  value={tokenRequestBody} onChange={e => setTokenRequestBody(e.target.value)}
+                  spellCheck={false} placeholder={`{"client_id": "...", "client_secret": "..."}`} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl}>Campo do token na resposta</label>
+                  <input className={inp} value={tokenOutputField} onChange={e => setTokenOutputField(e.target.value)}
+                    placeholder="token" />
+                </div>
+                <div>
+                  <label className={lbl}>Header destino</label>
+                  <input className={inp} value={tokenHeaderName} onChange={e => setTokenHeaderName(e.target.value)}
+                    placeholder="Authorization" />
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Request / Response */}

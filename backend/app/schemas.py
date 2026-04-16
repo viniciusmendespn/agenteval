@@ -13,6 +13,10 @@ class AgentCreate(BaseModel):
     request_body: str = '{"message": "{{message}}"}'
     output_field: str = "response"
     system_prompt: Optional[str] = None
+    token_url: Optional[str] = None
+    token_request_body: Optional[str] = None
+    token_output_field: Optional[str] = None
+    token_header_name: Optional[str] = None
 
 class AgentOut(AgentCreate):
     id: int
@@ -35,6 +39,7 @@ class TestCaseCreate(BaseModel):
     context: Optional[list[str]] = None
     tags: Optional[str] = None
     turns: Optional[list[Turn]] = None  # None = single-turn (backward compat)
+    variables: Optional[dict] = None  # {"chave": "valor"} — substituídos em {{chave}} no body
 
 class TestCaseOut(TestCaseCreate):
     id: int

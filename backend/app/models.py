@@ -17,6 +17,10 @@ class Agent(Base):
     connection_type = Column(String, default="http")
     request_body = Column(Text, default='{"message": "{{message}}"}')
     output_field = Column(String, default="response")
+    token_url = Column(String, nullable=True)
+    token_request_body = Column(Text, nullable=True)
+    token_output_field = Column(String, nullable=True)
+    token_header_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -31,6 +35,7 @@ class TestCase(Base):
     context = Column(JSON, nullable=True)
     tags = Column(String, nullable=True)
     turns = Column(JSON, nullable=True)  # [{input, expected_output}] — null = single-turn
+    variables = Column(JSON, nullable=True)  # {"chave": "valor"} — substituídos em {{chave}} no body
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

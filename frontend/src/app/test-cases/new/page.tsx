@@ -3,6 +3,7 @@ import { useState } from "react"
 import { createTestCase, type Turn } from "@/lib/api"
 
 type TurnItem = { input: string; expected_output: string }
+type VarItem = { key: string; value: string }
 
 export default function NewTestCasePage() {
   const [title, setTitle] = useState("")
@@ -17,8 +18,22 @@ export default function NewTestCasePage() {
   const [isMultiTurn, setIsMultiTurn] = useState(false)
   const [turns, setTurns] = useState<TurnItem[]>([{ input: "", expected_output: "" }])
 
+  // Variables (placeholders)
+  const [variables, setVariables] = useState<VarItem[]>([])
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  function addVar() { setVariables(prev => [...prev, { key: "", value: "" }]) }
+  function removeVar(i: number) { setVariables(prev => prev.filter((_, idx) => idx !== i)) }
+  function updateVar(i: number, field: keyof VarItem, value: string) {
+    setVariables(prev => prev.map((v, idx) => idx === i ? { ...v, [field]: value } : v))
+  }
+  function buildVariablesDict(): Record<string, string> | undefined {
+    const entries = variables.filter(v => v.key.trim())
+    if (!entries.length) return undefined
+    return Object.fromEntries(entries.map(v => [v.key.trim(), v.value]))
+  }
 
   function updateTurn(i: number, field: keyof TurnItem, value: string) {
     setTurns(prev => prev.map((t, idx) => idx === i ? { ...t, [field]: value } : t))
@@ -41,6 +56,7 @@ export default function NewTestCasePage() {
         ? context.split("\n").map(l => l.trim()).filter(Boolean)
         : undefined
 
+      const varsDict = buildVariablesDict()
       if (isMultiTurn) {
         const turnsPayload: Turn[] = turns.map(t => ({
           input: t.input,
@@ -53,6 +69,7 @@ export default function NewTestCasePage() {
           context: contextArr,
           tags: tags || undefined,
           turns: turnsPayload,
+          variables: varsDict,
         })
       } else {
         await createTestCase({
@@ -61,6 +78,7 @@ export default function NewTestCasePage() {
           expected_output: expectedOutput || undefined,
           context: contextArr,
           tags: tags || undefined,
+          variables: varsDict,
         })
       }
       window.location.href = "/test-cases"
@@ -157,6 +175,35 @@ export default function NewTestCasePage() {
         <Field label="Tags (opcional)" hint="Separadas por vírgula">
           <input className={inp} value={tags} onChange={e => setTags(e.target.value)} placeholder="suporte, faq" />
         </Field>
+
+        {/* Variáveis */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-gray-700">Variáveis <span className="font-normal text-gray-400">(opcional)</span></label>
+            <button type="button" onClick={addVar}
+              className="text-xs px-2.5 py-1 border border-dashed border-gray-300 rounded hover:border-red-400 text-gray-500">
+              + Adicionar variável
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mb-2">
+            Use <code className="bg-gray-100 px-1 rounded">{"{{chave}}"}</code> no body do agente para substituir pelo valor definido aqui.
+          </p>
+          {variables.length > 0 && (
+            <div className="space-y-2">
+              {variables.map((v, i) => (
+                <div key={i} className="flex gap-2 items-center">
+                  <input className={`${inp} flex-1`} value={v.key} onChange={e => updateVar(i, "key", e.target.value)}
+                    placeholder="chave" />
+                  <span className="text-gray-400 text-sm">=</span>
+                  <input className={`${inp} flex-1`} value={v.value} onChange={e => updateVar(i, "value", e.target.value)}
+                    placeholder="valor" />
+                  <button type="button" onClick={() => removeVar(i)}
+                    className="text-gray-400 hover:text-red-500 text-xs shrink-0">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
