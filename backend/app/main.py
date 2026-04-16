@@ -1,3 +1,6 @@
+import json as _json
+from pathlib import Path as _Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text, inspect
@@ -69,6 +72,22 @@ def _migrate():
         if "turn_order" not in dr_cols:
             conn.execute(text("ALTER TABLE dataset_records ADD COLUMN turn_order INTEGER"))
 
+        # agents: chamada em dois passos (token pré-chamada)
+        ag_cols = {c["name"] for c in insp.get_columns("agents")}
+        if "token_url" not in ag_cols:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN token_url TEXT"))
+        if "token_request_body" not in ag_cols:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN token_request_body TEXT"))
+        if "token_output_field" not in ag_cols:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN token_output_field TEXT"))
+        if "token_header_name" not in ag_cols:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN token_header_name TEXT"))
+
+        # test_cases: variáveis de substituição de placeholders
+        tc_cols = {c["name"] for c in insp.get_columns("test_cases")}
+        if "variables" not in tc_cols:
+            conn.execute(text("ALTER TABLE test_cases ADD COLUMN variables JSON"))
+
         conn.commit()
 
 _migrate()
@@ -136,3 +155,12 @@ app.include_router(chat.router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/version")
+def get_version():
+    vf = _Path(__file__).parent.parent.parent / "version.json"
+    try:
+        return _json.loads(vf.read_text(encoding="utf-8"))
+    except Exception:
+        return {"version": "unknown", "build": 0, "updated_at": None}

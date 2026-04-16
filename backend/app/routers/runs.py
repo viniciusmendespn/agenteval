@@ -210,6 +210,11 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
                 output_field=agent.output_field,
                 connection_type=agent.connection_type,
                 session_id=session_id,
+                variables=tc.variables or {},
+                token_url=getattr(agent, "token_url", None),
+                token_request_body=getattr(agent, "token_request_body", None),
+                token_output_field=getattr(agent, "token_output_field", None),
+                token_header_name=getattr(agent, "token_header_name", None),
             )
             response_time_ms = (time.time() - t0) * 1000
             scores, reasons = _call_evaluate(tc.input, actual_output, tc.expected_output, tc.context, response_time_ms, profile)
@@ -233,6 +238,11 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
                         output_field=agent.output_field,
                         connection_type=agent.connection_type,
                         session_id=session_id,
+                        variables=tc.variables or {},
+                        token_url=getattr(agent, "token_url", None),
+                        token_request_body=getattr(agent, "token_request_body", None),
+                        token_output_field=getattr(agent, "token_output_field", None),
+                        token_header_name=getattr(agent, "token_header_name", None),
                     )
                 except Exception as e:
                     return TestResult(run_id=run_id, test_case_id=tc.id,

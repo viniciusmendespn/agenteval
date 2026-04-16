@@ -54,6 +54,10 @@ export type Agent = {
   request_body: string
   output_field: string
   system_prompt?: string
+  token_url?: string
+  token_request_body?: string
+  token_output_field?: string
+  token_header_name?: string
   created_at: string
 }
 
@@ -70,6 +74,7 @@ export type TestCase = {
   context?: string[]
   tags?: string
   turns?: Turn[]  // undefined/null = single-turn
+  variables?: Record<string, string>
   created_at: string
 }
 

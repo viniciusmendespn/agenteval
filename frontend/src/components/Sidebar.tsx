@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import {
   BarChart2,
@@ -15,6 +16,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
+import { API } from "@/lib/api"
 import WorkspaceSwitcher from "./WorkspaceSwitcher"
 
 const sections = [
@@ -52,6 +54,14 @@ const sections = [
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const [version, setVersion] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch(`${API}/version`)
+      .then(r => r.json())
+      .then(d => setVersion(`v${d.version} · build ${d.build}`))
+      .catch(() => {})
+  }, [])
   const activeHref = sections
     .flatMap(section => section.items)
     .filter(item => item.exact ? pathname === item.href : pathname.startsWith(item.href))
@@ -116,7 +126,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-gray-200 px-5 py-3">
-        <p className="text-xs text-gray-500">Flame UI - v0.3.0</p>
+        <p className="text-xs text-gray-400">{version ?? "AgentEval"}</p>
       </div>
     </aside>
   )

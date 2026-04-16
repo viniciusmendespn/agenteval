@@ -35,6 +35,12 @@ export default function EditAgentPage() {
   const [fetching, setFetching] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const [useTokenCall, setUseTokenCall] = useState(false)
+  const [tokenUrl, setTokenUrl] = useState("")
+  const [tokenRequestBody, setTokenRequestBody] = useState("{}")
+  const [tokenOutputField, setTokenOutputField] = useState("token")
+  const [tokenHeaderName, setTokenHeaderName] = useState("Authorization")
+
   useEffect(() => {
     getAgent(Number(id))
       .then(a => {
@@ -45,6 +51,13 @@ export default function EditAgentPage() {
         setRequestBody(a.request_body)
         setOutputField(a.output_field)
         setSystemPrompt(a.system_prompt ?? "")
+        if (a.token_url) {
+          setUseTokenCall(true)
+          setTokenUrl(a.token_url)
+          setTokenRequestBody(a.token_request_body ?? "{}")
+          setTokenOutputField(a.token_output_field ?? "token")
+          setTokenHeaderName(a.token_header_name ?? "Authorization")
+        }
       })
       .catch(() => setError("Agente não encontrado"))
       .finally(() => setFetching(false))
@@ -91,7 +104,15 @@ export default function EditAgentPage() {
     if (bodyError) return
     setLoading(true); setError(null)
     try {
-      await updateAgent(Number(id), { name, url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, system_prompt: systemPrompt || undefined })
+      await updateAgent(Number(id), {
+        name, url, api_key: apiKey, connection_type: connectionType,
+        request_body: requestBody, output_field: outputField,
+        system_prompt: systemPrompt || undefined,
+        token_url: useTokenCall ? tokenUrl || undefined : undefined,
+        token_request_body: useTokenCall ? tokenRequestBody || undefined : undefined,
+        token_output_field: useTokenCall ? tokenOutputField || undefined : undefined,
+        token_header_name: useTokenCall ? tokenHeaderName || undefined : undefined,
+      })
       window.location.href = "/agents"
     } catch (e: any) { setError(e.message); setLoading(false) }
   }
@@ -155,6 +176,48 @@ export default function EditAgentPage() {
               </button>
             ))}
           </div>
+        </section>
+
+        {/* Autenticação em dois passos */}
+        <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className={`${sec}`}>Autenticação em dois passos <span className="font-normal text-gray-400">(opcional)</span></h2>
+            <button type="button" onClick={() => setUseTokenCall(v => !v)}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useTokenCall ? "bg-blue-600" : "bg-gray-200"}`}>
+              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${useTokenCall ? "translate-x-4.5" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+          {useTokenCall && (
+            <div className="space-y-3 pt-1">
+              <p className="text-xs text-gray-400">
+                Antes de chamar o agente, faz uma requisição para obter um token dinâmico.
+                Use <code className="bg-gray-100 px-1 rounded">{"{{token}}"}</code> no body principal ou deixe a chave de API vazia para usar o token como Bearer automaticamente.
+              </p>
+              <div>
+                <label className={lbl}>URL do token *</label>
+                <input className={inp} value={tokenUrl} onChange={e => setTokenUrl(e.target.value)}
+                  placeholder="https://auth.exemplo.com/token" />
+              </div>
+              <div>
+                <label className={lbl}>Body da requisição de token</label>
+                <textarea className={`${inp} h-20 font-mono text-xs resize-y`}
+                  value={tokenRequestBody} onChange={e => setTokenRequestBody(e.target.value)}
+                  spellCheck={false} placeholder={`{"client_id": "...", "client_secret": "..."}`} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={lbl}>Campo do token na resposta</label>
+                  <input className={inp} value={tokenOutputField} onChange={e => setTokenOutputField(e.target.value)}
+                    placeholder="token" />
+                </div>
+                <div>
+                  <label className={lbl}>Header destino</label>
+                  <input className={inp} value={tokenHeaderName} onChange={e => setTokenHeaderName(e.target.value)}
+                    placeholder="Authorization" />
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
