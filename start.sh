@@ -13,7 +13,7 @@ echo ""
 cd "$ROOT/backend"
 
 if [ ! -f ".env" ]; then
-    echo "[1/5] Criando .env a partir do .env.example..."
+    echo "[1/6] Criando .env a partir do .env.example..."
     cp .env.example .env
     echo ""
     echo " ============================================================"
@@ -47,17 +47,26 @@ if [ -z "$KEY_VAL" ]; then
 fi
 
 if [ ! -d ".venv" ]; then
-    echo "[2/5] Criando ambiente virtual Python..."
+    echo "[2/6] Criando ambiente virtual Python..."
     python3 -m venv .venv
 else
-    echo "[2/5] Ambiente virtual já existe."
+    echo "[2/6] Ambiente virtual já existe."
 fi
 
-echo "[3/5] Instalando dependências Python..."
+echo "[3/6] Instalando dependências Python..."
 source .venv/bin/activate
 pip install -r requirements.txt -q
 
-echo "[4/5] Iniciando backend na porta 8000..."
+echo "[4/6] Verificando banco de dados..."
+if [ ! -f "agenteval.db" ]; then
+    echo "      Banco não encontrado. Criando dados de demonstração..."
+    python seed_demo.py
+    echo "      Banco de dados populado com sucesso!"
+else
+    echo "      Banco de dados já existe."
+fi
+
+echo "[5/6] Iniciando backend na porta 8000..."
 uvicorn app.main:app --reload --port 8000 &
 BACKEND_PID=$!
 
@@ -65,10 +74,10 @@ BACKEND_PID=$!
 cd "$ROOT/frontend"
 
 if [ ! -d "node_modules" ]; then
-    echo "[5/5] Instalando dependências Node..."
+    echo "[6/6] Instalando dependências Node..."
     npm install
 else
-    echo "[5/5] node_modules já existe."
+    echo "[6/6] node_modules já existe."
 fi
 
 echo ""
