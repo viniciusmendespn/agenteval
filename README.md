@@ -80,10 +80,10 @@ cp .env.example .env
 Edite o arquivo `.env` com suas credenciais:
 
 ```ini
-# LLM Judge — Azure OpenAI compatível (recomendado)
-JUDGE_BASE_URL=https://seu-endpoint-aqui
-JUDGE_API_KEY=sua-chave-aqui
-JUDGE_MODEL=gpt-4o
+# LLM Judge — Fusion LLM BRQ (recomendado)
+JUDGE_BASE_URL=https://fusion-llm.brq.com
+JUDGE_API_KEY=seu-token-fusion-aqui
+JUDGE_MODEL=gpt-5.2
 JUDGE_API_VERSION=2025-03-01-preview
 
 # Alternativa: OpenAI direto (se JUDGE_BASE_URL não estiver definido)
@@ -92,6 +92,34 @@ JUDGE_API_VERSION=2025-03-01-preview
 # Banco de dados (SQLite, padrão)
 DATABASE_URL=sqlite:///./agenteval.db
 ```
+
+#### Gerando o token do Fusion LLM (BRQ)
+
+O `JUDGE_API_KEY` é um token gerado pelo portal Fusion AI da BRQ. O token **expira em ~60 dias** — após isso é necessário gerar um novo e atualizar o `.env`.
+
+**Como gerar o token:**
+
+1. Acesse o gerador de tokens Fusion AI:
+   `https://fusion.brq.com/gerador-token/swagger-ui/index.html`
+
+2. Clique em **POST /obterToken** → **Try it out**
+
+3. Informe seu e-mail BRQ (`@brq.com`) no campo `email` e clique em **Execute**
+
+4. Você receberá o token no e-mail informado
+
+5. Cole o token no arquivo `.env`:
+   ```ini
+   JUDGE_API_KEY=token-recebido-por-email
+   ```
+
+6. Reinicie o backend para aplicar:
+   ```bash
+   taskkill /F /IM python.exe        # Windows: encerra o processo anterior
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+> **Token expirado?** Quando as avaliações começarem a falhar com erro de autenticação (401), repita os passos acima para gerar um novo token e atualizar o `.env`.
 
 #### Iniciar o servidor
 
