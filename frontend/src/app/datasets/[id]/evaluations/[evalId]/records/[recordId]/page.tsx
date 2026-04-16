@@ -1,63 +1,55 @@
 "use client"
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
-import { getRun, getTestCase, getProfile, type TestResult, type TestCase, type EvaluationProfile } from "@/lib/api"
+import { getDatasetEvaluation, getDataset, getProfile,
+  type DatasetResult, type DatasetRecord, type EvaluationProfile } from "@/lib/api"
 import { getMetricInfo, normalizeScore, scoreColorClasses } from "@/lib/metrics"
 import { ChevronLeft } from "lucide-react"
 import ConversationThread from "@/components/ConversationThread"
 
-export default function ResultDetailPage() {
-  const { id, tcId } = useParams<{ id: string; tcId: string }>()
-  const [result, setResult] = useState<TestResult | null>(null)
-  const [tc, setTc] = useState<TestCase | null>(null)
+export default function RecordDetailPage() {
+  const { id, evalId, recordId } = useParams<{ id: string; evalId: string; recordId: string }>()
+  const [record, setRecord] = useState<DatasetRecord | null>(null)
+  const [result, setResult] = useState<DatasetResult | null>(null)
   const [profile, setProfile] = useState<EvaluationProfile | null>(null)
   const [error, setError] = useState(false)
 
   useEffect(() => {
     async function load() {
       try {
-        const run = await getRun(Number(id))
-        const found = run.results.find(r => r.test_case_id === Number(tcId))
-        if (!found) { setError(true); return }
-        setResult(found)
-        getTestCase(Number(tcId)).then(setTc).catch(() => {})
-        getProfile(run.profile_id).then(setProfile).catch(() => {})
+        const [ds, ev] = await Promise.all([
+          getDataset(Number(id)),
+          getDatasetEvaluation(Number(id), Number(evalId)),
+        ])
+        const rec = ds.records.find(r => r.id === Number(recordId))
+        const res = ev.results.find(r => r.record_id === Number(recordId))
+        if (!rec || !res) { setError(true); return }
+        setRecord(rec)
+        setResult(res)
+        getProfile(ev.profile_id).then(setProfile).catch(() => {})
       } catch {
         setError(true)
       }
     }
     load()
-  }, [id, tcId])
+  }, [id, evalId, recordId])
 
-  if (error) return <div className="text-red-600 text-sm p-4">Resultado não encontrado.</div>
-  if (!result) return <div className="text-gray-400 text-sm animate-pulse p-4">Carregando...</div>
+  if (error) return <div className="text-red-600 text-sm p-4">Registro não encontrado.</div>
+  if (!record || !result) return <div className="text-gray-400 text-sm animate-pulse p-4">Carregando...</div>
 
   const criteria = profile?.criteria ?? []
-
-  // Prefere turn_outputs quando disponível (multi-turn); cria turno sintético para single-turn
-  const turns: Array<{ input: string; output: string }> =
-    result.turn_outputs && result.turn_outputs.length > 0
-      ? result.turn_outputs
-      : [{ input: tc?.input ?? "", output: result.actual_output ?? "" }]
-
-  const isMultiTurn = turns.length > 1
-
-  const lastExpected = isMultiTurn
-    ? (tc?.turns?.[tc.turns.length - 1]?.expected_output ?? null)
-    : tc?.expected_output ?? null
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       {/* Breadcrumb */}
-      <a href={`/runs/${id}`} className="text-gray-400 hover:text-gray-600 text-sm flex items-center gap-1">
-        <ChevronLeft className="w-4 h-4" /> Execução #{id}
+      <a href={`/datasets/${id}/evaluations/${evalId}`}
+        className="text-gray-400 hover:text-gray-600 text-sm flex items-center gap-1">
+        <ChevronLeft className="w-4 h-4" /> Avaliação #{evalId}
       </a>
 
-      {/* Título + status */}
+      {/* Status */}
       <div className="flex items-center gap-3 flex-wrap">
-        <h1 className="text-lg font-bold text-gray-900">
-          {tc?.title ?? `Caso #${tcId}`}
-        </h1>
+        <h1 className="text-lg font-bold text-gray-900">Registro #{recordId}</h1>
         {result.error ? (
           <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-100 text-red-700">erro</span>
         ) : result.passed ? (
@@ -65,17 +57,14 @@ export default function ResultDetailPage() {
         ) : (
           <span className="text-xs px-2 py-0.5 rounded font-medium bg-red-100 text-red-700">reprovado</span>
         )}
-        {result.turns_executed != null && result.turns_executed > 1 && (
-          <span className="text-xs px-2 py-0.5 rounded font-medium bg-purple-100 text-purple-700">
-            {result.turns_executed} turnos
-          </span>
-        )}
       </div>
 
-      {/* Conversa (single ou multi-turn) */}
-      <ConversationThread turns={turns} lastExpected={lastExpected} />
+      {/* Conversa em balões */}
+      <ConversationThread
+        turns={[{ input: record.input, output: record.actual_output ?? "" }]}
+      />
 
-      {/* Erro */}
+      {/* Erro de avaliação */}
       {result.error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-5">
           <h2 className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-2">Erro</h2>
@@ -84,13 +73,10 @@ export default function ResultDetailPage() {
       )}
 
       {/* Métricas */}
-      {!result.error && Object.keys(result.scores).length > 0 && (
+      {!result.error && result.scores && Object.keys(result.scores).length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Métricas</h2>
-          <p className="text-xs text-gray-400 mb-4">
-            Todos os scores são normalizados: 100% = ótimo, 0% = ruim.
-            {isMultiTurn && " Avaliação feita sobre o último turno da conversa."}
-          </p>
+          <p className="text-xs text-gray-400 mb-4">100% = ótimo, 0% = ruim.</p>
           <div className="space-y-5">
             {Object.entries(result.scores).map(([k, v]) => {
               const info = getMetricInfo(k)

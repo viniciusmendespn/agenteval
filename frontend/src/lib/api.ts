@@ -1,4 +1,4 @@
-export const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000"
+export const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 const WORKSPACE_STORAGE_KEY = "agenteval.workspaceId"
 
@@ -53,6 +53,7 @@ export type Agent = {
   connection_type: string
   request_body: string
   output_field: string
+  system_prompt?: string
   created_at: string
 }
 
@@ -160,6 +161,7 @@ export type TestResult = {
   passed?: boolean
   error?: string
   turns_executed?: number
+  turn_outputs?: Array<{ input: string; output: string }>
   created_at: string
 }
 
@@ -254,7 +256,7 @@ export const testConnection = (url: string, api_key: string) =>
   })
 export const previewResponse = (data: {
   url: string; api_key: string; connection_type: string
-  request_body: string; output_field: string; message: string
+  request_body: string; output_field: string; message: string; session_id?: string
 }) =>
   request<{
     connection_type: string; raw_response?: unknown; sample_events?: unknown[]
@@ -284,6 +286,7 @@ export const deleteProfile = (id: number) =>
 // --- Runs (teste de agente ao vivo) ---
 export const getRuns = () => request<TestRun[]>("/runs/")
 export const getRun = (id: number) => request<TestRun>(`/runs/${id}`)
+export const cancelRun = (id: number) => request<{ ok: boolean }>(`/runs/${id}/cancel`, { method: "POST" })
 export const createRun = (data: { agent_id: number; profile_id: number; test_case_ids: number[] }) =>
   request<TestRun>("/runs/", { method: "POST", body: JSON.stringify(data) })
 

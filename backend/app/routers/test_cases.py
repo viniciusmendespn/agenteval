@@ -10,7 +10,7 @@ router = APIRouter(prefix="/test-cases", tags=["test_cases"])
 
 @router.get("/", response_model=list[TestCaseOut])
 def list_test_cases(db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
-    return db.query(TestCase).filter(TestCase.workspace_id == workspace.workspace_id).all()
+    return db.query(TestCase).filter(TestCase.workspace_id == workspace.workspace_id).order_by(TestCase.created_at.desc()).all()
 
 
 @router.post("/", response_model=TestCaseOut, status_code=201)

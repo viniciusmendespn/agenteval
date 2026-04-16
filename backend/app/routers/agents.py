@@ -55,6 +55,7 @@ class PreviewRequest(BaseModel):
     request_body: str = '{"message": "{{message}}"}'
     output_field: str = ""
     message: str = "Olá, tudo bem?"
+    session_id: str = ""
 
 
 @router.post("/preview")
@@ -68,7 +69,7 @@ def preview_response(data: PreviewRequest):
         "Content-Type": "application/json",
     }
     from ..services.agent_caller import _build_payload
-    payload = _build_payload(data.request_body, data.message)
+    payload = _build_payload(data.request_body, data.message, data.session_id)
 
     try:
         if data.connection_type == "sse":

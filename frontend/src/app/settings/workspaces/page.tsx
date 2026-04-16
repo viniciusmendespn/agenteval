@@ -59,6 +59,7 @@ export default function WorkspaceSettingsPage() {
   function activate(workspace: Workspace) {
     setActiveWorkspaceId(workspace.id)
     setActiveId(String(workspace.id))
+    window.sessionStorage.setItem("agenteval.workspaceConfirmed", String(workspace.id))
     window.location.reload()
   }
 

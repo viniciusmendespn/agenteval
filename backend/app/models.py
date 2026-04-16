@@ -92,6 +92,7 @@ class TestResult(Base):
     passed = Column(Boolean, nullable=True)
     error = Column(Text, nullable=True)
     turns_executed = Column(Integer, nullable=True)  # quantos turnos rodaram
+    turn_outputs = Column(JSON, nullable=True)        # [{input, output}] por turno (multi-turn)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     run = relationship("TestRun", back_populates="results")

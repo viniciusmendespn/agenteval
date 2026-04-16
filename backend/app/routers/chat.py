@@ -28,6 +28,10 @@ Regras:
 - Defaults ao criar perfil: relevancy ON (threshold 0.7), demais métricas OFF.
 - Defaults ao criar caso de teste: expected_output e context vazios.
 - hallucination/toxicity/bias: score 0 = ótimo, score 1 = péssimo.
+- Para testar um agente (tool test_agent): SEMPRE peça o contexto do agente (o que ele faz, como deve se comportar) se a mensagem não o incluir. Não chame test_agent sem esse contexto.
+- Ao usar test_agent sem profile_id, o perfil é selecionado ou criado automaticamente.
+- Após test_agent retornar, NÃO diga que a execução foi iniciada. Os cenários foram criados mas a execução ainda não começou. Apresente o link retornado como [Revisar e executar](/runs/new?...) para que o usuário revise antes de disparar.
+- Ao mencionar páginas do sistema, use SEMPRE links markdown clicáveis. Exemplos: [Ver execução #20](/runs/20), [Agentes](/agents), [Datasets](/datasets). Nunca escreva o caminho como texto simples.
 """
 
 # ── Definição das tools ───────────────────────────────────────────────────────
@@ -114,17 +118,29 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_test_case",
-            "description": "Cria um novo caso de teste.",
+            "description": "Cria um novo caso de teste. Para multi-turn, forneça o campo turns em vez de input.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Título do caso de teste"},
-                    "input": {"type": "string", "description": "Mensagem que será enviada ao agente"},
+                    "input": {"type": "string", "description": "Mensagem que será enviada ao agente (single-turn). Omitir se usar turns."},
                     "expected_output": {"type": "string", "description": "Resposta esperada (opcional, melhora a avaliação)"},
                     "context": {"type": "array", "items": {"type": "string"}, "description": "Lista de strings de contexto (opcional, usada para métricas como faithfulness)"},
                     "tags": {"type": "string", "description": "Tags separadas por vírgula (opcional)"},
+                    "turns": {
+                        "type": "array",
+                        "description": "Sequência de turnos para caso multi-turn (substitui input).",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "input": {"type": "string", "description": "Mensagem do usuário neste turno"},
+                                "expected_output": {"type": "string", "description": "Resposta esperada neste turno (opcional)"},
+                            },
+                            "required": ["input"],
+                        },
+                    },
                 },
-                "required": ["title", "input"],
+                "required": ["title"],
             },
         },
     },
@@ -172,6 +188,23 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "test_agent",
+            "description": "Gera automaticamente cenários de teste multi-turn para um agente, cria os casos de teste no sistema e inicia uma execução de avaliação. Use quando o usuário pedir para testar um agente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "agent_id": {"type": "integer", "description": "ID do agente a ser testado"},
+                    "agent_context": {"type": "string", "description": "Descrição do agente: o que faz, como deve se comportar, restrições e casos de uso esperados."},
+                    "profile_id": {"type": "integer", "description": "ID do perfil de avaliação a usar (opcional — se omitido, usa o primeiro disponível ou cria um padrão)."},
+                    "n_scenarios": {"type": "integer", "description": "Número de cenários de teste a gerar (padrão: 5)."},
+                },
+                "required": ["agent_id", "agent_context"],
+            },
+        },
+    },
 ]
 
 # ── Implementação das tools ───────────────────────────────────────────────────
@@ -198,6 +231,8 @@ def _run_tool(name: str, args: dict, db: Session, workspace_id: int) -> str:
             return _tool_list_runs(args, db, workspace_id)
         if name == "get_agent_timeline":
             return _tool_get_agent_timeline(args, db, workspace_id)
+        if name == "test_agent":
+            return _tool_test_agent(args, db, workspace_id)
         return f"Tool desconhecida: {name}"
     except Exception as e:
         return f"Erro ao executar {name}: {str(e)}"
@@ -314,18 +349,21 @@ def _tool_list_test_cases(db: Session, workspace_id: int) -> str:
 
 
 def _tool_create_test_case(args: dict, db: Session, workspace_id: int) -> str:
+    turns = args.get("turns")
+    input_text = args.get("input") or (turns[0]["input"] if turns else "")
     tc = TestCase(
         title=args["title"],
-        input=args["input"],
+        input=input_text,
         expected_output=args.get("expected_output"),
         context=args.get("context"),
         tags=args.get("tags"),
+        turns=turns,
         workspace_id=workspace_id,
     )
     db.add(tc)
     db.commit()
     db.refresh(tc)
-    return json.dumps({"id": tc.id, "titulo": tc.title}, ensure_ascii=False)
+    return json.dumps({"id": tc.id, "titulo": tc.title, "turnos": len(turns) if turns else None}, ensure_ascii=False)
 
 
 def _tool_start_run(args: dict, db: Session, workspace_id: int) -> str:
@@ -439,6 +477,104 @@ def _tool_get_agent_timeline(args: dict, db: Session, workspace_id: int) -> str:
     return json.dumps({"agente": agent.name, "evolucao": points}, ensure_ascii=False)
 
 
+def _generate_test_scenarios(agent_name: str, context: str, n: int) -> list:
+    """Chama o LLM para gerar n cenários de teste multi-turn para o agente."""
+    import re as _re
+    client = _get_llm_client()
+    model = os.getenv("JUDGE_MODEL", "gpt-4")
+    prompt = (
+        f'Crie {n} cenários de teste multi-turn para o agente "{agent_name}".\n\n'
+        f"Contexto do agente:\n{context}\n\n"
+        f'Retorne JSON com chave "scenarios": array de {n} objetos, cada um com:\n'
+        '- "title": título descritivo do cenário\n'
+        '- "tags": tags separadas por vírgula\n'
+        '- "turns": array de 2 a 4 objetos {"input": string, "expected_output": string ou null}\n\n'
+        "Cubra cenários de: fluxo feliz, caso extremo, ambiguidade, informação incompleta, comportamento inesperado.\n"
+        "Retorne apenas o JSON, sem explicações."
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = resp.choices[0].message.content.strip()
+        m = _re.search(r'\{.*\}', content, _re.DOTALL)
+        if m:
+            data = json.loads(m.group())
+            return data.get("scenarios", [])[:n]
+    except Exception:
+        pass
+    return []
+
+
+def _tool_test_agent(args: dict, db: Session, workspace_id: int) -> str:
+    agent = db.query(Agent).filter(Agent.id == args["agent_id"], Agent.workspace_id == workspace_id).first()
+    if not agent:
+        return f"Agente ID {args['agent_id']} não encontrado."
+
+    n = args.get("n_scenarios", 5)
+    context = args["agent_context"]
+    if agent.system_prompt:
+        context = f"System prompt do agente:\n{agent.system_prompt}\n\nContexto adicional:\n{context}"
+    scenarios = _generate_test_scenarios(agent.name, context, n)
+    if not scenarios:
+        return "Não foi possível gerar cenários. Tente detalhar mais o contexto do agente."
+
+    # Criar casos de teste com turns
+    tc_ids = []
+    for s in scenarios:
+        turns = s.get("turns") or []
+        tc = TestCase(
+            title=s.get("title", f"Cenário auto-gerado {len(tc_ids) + 1}"),
+            input=turns[0]["input"] if turns else s.get("title", ""),
+            turns=turns if turns else None,
+            tags=s.get("tags", "auto-gerado,multi-turn"),
+            workspace_id=workspace_id,
+        )
+        db.add(tc)
+        db.commit()
+        db.refresh(tc)
+        tc_ids.append(tc.id)
+
+    # Selecionar ou criar perfil de avaliação
+    profile_id = args.get("profile_id")
+    if profile_id:
+        profile = db.query(EvaluationProfile).filter(
+            EvaluationProfile.id == profile_id,
+            EvaluationProfile.workspace_id == workspace_id,
+        ).first()
+        if not profile:
+            return f"Perfil ID {profile_id} não encontrado."
+    else:
+        profile = db.query(EvaluationProfile).filter(
+            EvaluationProfile.workspace_id == workspace_id,
+        ).first()
+        if not profile:
+            profile = EvaluationProfile(
+                name="Padrão (auto)",
+                use_relevancy=True,
+                relevancy_threshold=0.7,
+                use_hallucination=True,
+                hallucination_threshold=0.5,
+                workspace_id=workspace_id,
+            )
+            db.add(profile)
+            db.commit()
+            db.refresh(profile)
+
+    cases_param = ",".join(str(i) for i in tc_ids)
+    link = f"/runs/new?agent={agent.id}&profile={profile.id}&cases={cases_param}"
+
+    return json.dumps({
+        "agente": agent.name,
+        "perfil": profile.name,
+        "cenarios_criados": len(tc_ids),
+        "link": link,
+        "mensagem": f"Criei {len(tc_ids)} cenários de teste. Acesse o link para revisar e disparar a execução.",
+        "cenarios": [{"id": tc_ids[i], "titulo": s.get("title", "")} for i, s in enumerate(scenarios)],
+    }, ensure_ascii=False)
+
+
 # ── Endpoint principal ────────────────────────────────────────────────────────
 
 class ChatMessage(BaseModel):
@@ -452,6 +588,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    tokens: int = 0
 
 
 def _get_llm_client():
@@ -474,6 +611,8 @@ def chat(
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages += [{"role": m.role, "content": m.content} for m in body.messages]
 
+    total_tokens = 0
+
     # Loop de tool calling (máx 5 rodadas)
     for _ in range(5):
         response = client.chat.completions.create(
@@ -482,6 +621,8 @@ def chat(
             tools=TOOLS,
             tool_choice="auto",
         )
+        if response.usage:
+            total_tokens += response.usage.total_tokens
         choice = response.choices[0]
 
         if choice.finish_reason == "tool_calls" and choice.message.tool_calls:
@@ -499,6 +640,6 @@ def chat(
                 })
         else:
             # Resposta final em texto
-            return ChatResponse(reply=choice.message.content or "")
+            return ChatResponse(reply=choice.message.content or "", tokens=total_tokens)
 
-    return ChatResponse(reply="Não consegui completar a operação após várias tentativas.")
+    return ChatResponse(reply="Não consegui completar a operação após várias tentativas.", tokens=total_tokens)

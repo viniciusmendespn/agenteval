@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState, useMemo } from "react"
 import { useParams } from "next/navigation"
-import { getRun, getTestCases, getProfile, getRunBreakdown,
+import { getRun, getTestCases, getProfile, getRunBreakdown, cancelRun,
   type TestRun, type TestCase, type EvaluationProfile, type RunBreakdown } from "@/lib/api"
 import { getMetricInfo, normalizeScore, scoreColorClasses } from "@/lib/metrics"
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from "recharts"
@@ -26,10 +26,11 @@ function StatusBadge({ status }: { status: string }) {
     running:   "bg-yellow-100 text-yellow-700",
     completed: "bg-green-100 text-green-700",
     failed:    "bg-red-100 text-red-700",
+    cancelled: "bg-orange-100 text-orange-700",
     pending:   "bg-gray-100 text-gray-500",
   }
   const labels: Record<string, string> = {
-    running: "Executando", completed: "Concluída", failed: "Falhou", pending: "Pendente",
+    running: "Executando", completed: "Concluída", failed: "Falhou", cancelled: "Cancelada", pending: "Pendente",
   }
   return (
     <span className={`text-xs px-2 py-0.5 rounded font-medium ${map[status] ?? map.pending}`}>
@@ -115,6 +116,8 @@ export default function RunPage() {
   const [profile, setProfile] = useState<EvaluationProfile | null>(null)
   const [breakdown, setBreakdown] = useState<RunBreakdown | null>(null)
   const [error, setError] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+  const [confirmCancel, setConfirmCancel] = useState(false)
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all")
   const [searchText, setSearchText] = useState("")
 
@@ -201,10 +204,45 @@ export default function RunPage() {
             </div>
           )}
         </div>
-        <a href={`/runs/compare?a=${run.id}`}
-          className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">
-          Comparar
-        </a>
+        <div className="flex gap-2">
+          {isRunning && (
+            confirmCancel ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">Cancelar execução?</span>
+                <button
+                  onClick={async () => {
+                    setCancelling(true)
+                    setConfirmCancel(false)
+                    try { await cancelRun(run.id) } catch {}
+                    finally { setCancelling(false) }
+                  }}
+                  disabled={cancelling}
+                  className="text-xs px-2.5 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+                >
+                  Confirmar
+                </button>
+                <button
+                  onClick={() => setConfirmCancel(false)}
+                  className="text-xs px-2.5 py-1 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+                >
+                  Não
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmCancel(true)}
+                disabled={cancelling}
+                className="text-xs px-3 py-1.5 border border-red-200 rounded-lg hover:bg-red-50 text-red-600 disabled:opacity-50"
+              >
+                {cancelling ? "Cancelando..." : "Cancelar execução"}
+              </button>
+            )
+          )}
+          <a href={`/runs/compare?a=${run.id}`}
+            className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600">
+            Comparar
+          </a>
+        </div>
       </div>
 
       {/* Breakdown */}

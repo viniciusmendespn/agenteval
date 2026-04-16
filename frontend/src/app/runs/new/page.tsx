@@ -1,8 +1,10 @@
 "use client"
 import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { getAgents, getProfiles, getTestCases, createRun, type Agent, type EvaluationProfile, type TestCase } from "@/lib/api"
 
 export default function NewRunPage() {
+  const searchParams = useSearchParams()
   const [agents, setAgents] = useState<Agent[]>([])
   const [profiles, setProfiles] = useState<EvaluationProfile[]>([])
   const [testCases, setTestCases] = useState<TestCase[]>([])
@@ -13,6 +15,19 @@ export default function NewRunPage() {
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    const agentParam = searchParams.get("agent")
+    const profileParam = searchParams.get("profile")
+    const casesParam = searchParams.get("cases")
+
+    if (agentParam) setAgentId(Number(agentParam))
+    if (profileParam) setProfileId(Number(profileParam))
+    if (casesParam) {
+      const ids = casesParam.split(",").map(Number).filter(Boolean)
+      setSelectedCases(new Set(ids))
+    }
+  }, [searchParams])
 
   useEffect(() => {
     getAgents().then(setAgents).catch(() => {})

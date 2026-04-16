@@ -80,18 +80,20 @@ export default function NewTestCasePage() {
         </Field>
 
         {/* Mode toggle */}
-        <div className="flex items-center gap-2 pt-1">
-          <span className="text-sm font-medium text-gray-700 mr-1">Modo:</span>
-          <button type="button" onClick={() => setIsMultiTurn(false)}
-            className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${!isMultiTurn ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
-            Turno único
-          </button>
-          <button type="button" onClick={() => setIsMultiTurn(true)}
-            className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${isMultiTurn ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
-            Multi-turno
-          </button>
+        <div className="space-y-1.5 pt-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-700 mr-1">Modo:</span>
+            <button type="button" onClick={() => setIsMultiTurn(false)}
+              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${!isMultiTurn ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+              Turno único
+            </button>
+            <button type="button" onClick={() => setIsMultiTurn(true)}
+              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${isMultiTurn ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+              Multi-turno
+            </button>
+          </div>
           {isMultiTurn && (
-            <span className="text-xs text-gray-400 ml-1">O agente recebe um sessionId compartilhado em todos os turnos</span>
+            <p className="text-xs text-gray-400">O agente recebe um sessionId compartilhado em todos os turnos.</p>
           )}
         </div>
 

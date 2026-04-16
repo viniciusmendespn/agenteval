@@ -21,12 +21,14 @@ export default function EditAgentPage() {
   const [connectionType, setConnectionType] = useState("http")
   const [requestBody, setRequestBody] = useState("")
   const [outputField, setOutputField] = useState("")
+  const [systemPrompt, setSystemPrompt] = useState("")
   const [bodyError, setBodyError] = useState<string | null>(null)
 
   const [pingResult, setPingResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [pinging, setPinging] = useState(false)
   const [preview, setPreview] = useState<unknown | null>(null)
   const [previewMsg, setPreviewMsg] = useState("Olá, tudo bem?")
+  const [previewSessionId, setPreviewSessionId] = useState("")
   const [previewing, setPreviewing] = useState(false)
 
   const [loading, setLoading] = useState(false)
@@ -42,6 +44,7 @@ export default function EditAgentPage() {
         setConnectionType(a.connection_type)
         setRequestBody(a.request_body)
         setOutputField(a.output_field)
+        setSystemPrompt(a.system_prompt ?? "")
       })
       .catch(() => setError("Agente não encontrado"))
       .finally(() => setFetching(false))
@@ -73,9 +76,11 @@ export default function EditAgentPage() {
 
   async function handlePreview() {
     if (!url || bodyError) return
+    const ciid = crypto.randomUUID()
+    setPreviewSessionId(ciid)
     setPreviewing(true); setPreview(null)
     try {
-      const r = await previewResponse({ url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, message: previewMsg })
+      const r = await previewResponse({ url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, message: previewMsg, session_id: ciid })
       setPreview(r)
     } catch (e: any) { setPreview({ error: e.message }) }
     finally { setPreviewing(false) }
@@ -86,7 +91,7 @@ export default function EditAgentPage() {
     if (bodyError) return
     setLoading(true); setError(null)
     try {
-      await updateAgent(Number(id), { name, url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField })
+      await updateAgent(Number(id), { name, url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, system_prompt: systemPrompt || undefined })
       window.location.href = "/agents"
     } catch (e: any) { setError(e.message); setLoading(false) }
   }
@@ -122,6 +127,22 @@ export default function EditAgentPage() {
             <label className={lbl}>Token de autenticação <span className="font-normal text-gray-400">(Bearer — opcional)</span></label>
             <input className={inp} type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} />
           </div>
+        </section>
+
+        <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className={sec}>System Prompt <span className="font-normal text-gray-400">(opcional)</span></h2>
+          </div>
+          <p className="text-xs text-gray-400">
+            Instruções do agente. Usado pelo assistente para gerar cenários de teste mais relevantes.
+          </p>
+          <textarea
+            className={`${inp} h-28 text-xs resize-y font-mono`}
+            value={systemPrompt}
+            onChange={e => setSystemPrompt(e.target.value)}
+            placeholder="Ex: Você é um assistente bancário. Responda apenas perguntas sobre conta corrente, cartão e empréstimos..."
+            spellCheck={false}
+          />
         </section>
 
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
@@ -171,6 +192,12 @@ export default function EditAgentPage() {
               {previewing ? "Aguardando..." : "Enviar e ver resposta"}
             </button>
           </div>
+          {previewSessionId && (
+            <p className="text-xs text-gray-400">
+              <span className="font-medium text-gray-500">{"{{sessionId}}"}</span> usado:{" "}
+              <code className="font-mono text-gray-500">{previewSessionId}</code>
+            </p>
+          )}
           {preview && (() => {
             const p = preview as any
             return (

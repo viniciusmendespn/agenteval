@@ -217,9 +217,18 @@ export default function AppendDatasetModal({ datasetId, datasetName, onClose, on
 
               {/* Context paths */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">
-                  Campos de contexto <span className="text-gray-400">(opcional, múltiplos)</span>
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-medium text-gray-700">
+                    Campos de contexto <span className="text-gray-400">(opcional, múltiplos)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setContextPaths(analysis.all_paths)}
+                      className="text-xs text-blue-600 hover:text-blue-800">Selecionar todos</button>
+                    <span className="text-gray-300 text-xs">|</span>
+                    <button type="button" onClick={() => setContextPaths([])}
+                      className="text-xs text-gray-400 hover:text-gray-600">Limpar</button>
+                  </div>
+                </div>
                 <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
                   {analysis.all_paths.map(p => (
                     <button

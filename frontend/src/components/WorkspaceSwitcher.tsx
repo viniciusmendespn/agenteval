@@ -39,6 +39,7 @@ export default function WorkspaceSwitcher() {
   function selectWorkspace(id: string) {
     setActiveWorkspaceId(id)
     setActiveId(id)
+    window.sessionStorage.setItem("agenteval.workspaceConfirmed", id)
     window.location.reload()
   }
 

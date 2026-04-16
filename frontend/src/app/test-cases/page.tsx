@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
-import { FlaskConical, Plus } from "lucide-react"
+import { FlaskConical, Plus, Search } from "lucide-react"
 import { getTestCases, type TestCase } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { ListSkeleton } from "@/components/Skeleton"
@@ -10,6 +10,7 @@ import { ListSkeleton } from "@/components/Skeleton"
 export default function TestCasesPage() {
   const [cases, setCases] = useState<TestCase[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState("")
 
   useEffect(() => {
     getTestCases()
@@ -17,6 +18,16 @@ export default function TestCasesPage() {
       .catch(() => setCases([]))
       .finally(() => setLoading(false))
   }, [])
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return cases
+    return cases.filter(tc =>
+      tc.title?.toLowerCase().includes(q) ||
+      tc.input?.toLowerCase().includes(q) ||
+      tc.tags?.toLowerCase().includes(q)
+    )
+  }, [cases, search])
 
   return (
     <div>
@@ -31,6 +42,19 @@ export default function TestCasesPage() {
         </Link>
       </div>
 
+      {!loading && cases.length > 0 && (
+        <div className="mb-4 relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar por nome, pergunta ou tag…"
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+          />
+        </div>
+      )}
+
       {loading ? (
         <ListSkeleton rows={6} />
       ) : cases.length === 0 ? (
@@ -40,9 +64,13 @@ export default function TestCasesPage() {
           </div>
           <p className="text-sm font-semibold text-gray-700">Nenhum caso de teste criado ainda.</p>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="flame-empty">
+          <p className="text-sm text-gray-500">Nenhum caso de teste encontrado para <span className="font-semibold">"{search}"</span>.</p>
+        </div>
       ) : (
         <div className="space-y-3">
-          {cases.map((tc) => (
+          {filtered.map((tc) => (
             <div key={tc.id} className="flame-panel flex items-start justify-between gap-4 p-4">
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-gray-900">{tc.title}</p>

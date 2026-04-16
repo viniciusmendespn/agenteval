@@ -222,7 +222,16 @@ export default function ImportDatasetPage() {
             </div>
 
             <div>
-              <label className={lbl}>Contexto / Trace</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className={lbl} style={{marginBottom: 0}}>Contexto / Trace</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setContextPaths(analysis.all_paths)}
+                    className="text-xs text-blue-600 hover:text-blue-800">Selecionar todos</button>
+                  <span className="text-gray-300 text-xs">|</span>
+                  <button type="button" onClick={() => setContextPaths([])}
+                    className="text-xs text-gray-400 hover:text-gray-600">Limpar</button>
+                </div>
+              </div>
               <p className={hint}>Campos com documentos recuperados ou trace de execução. Pode selecionar vários.</p>
               <div className="space-y-1 mt-1 max-h-40 overflow-y-auto border border-gray-100 rounded p-2">
                 {analysis.all_paths.map(p => (

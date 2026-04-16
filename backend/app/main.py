@@ -45,15 +45,22 @@ def _migrate():
             if "workspace_id" not in table_cols:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN workspace_id INTEGER DEFAULT 1 NOT NULL"))
 
+        # agents: system_prompt para geração de cenários
+        ag_cols = {c["name"] for c in insp.get_columns("agents")}
+        if "system_prompt" not in ag_cols:
+            conn.execute(text("ALTER TABLE agents ADD COLUMN system_prompt TEXT"))
+
         # test_cases: suporte a multi-turn
         tc_cols = {c["name"] for c in insp.get_columns("test_cases")}
         if "turns" not in tc_cols:
             conn.execute(text("ALTER TABLE test_cases ADD COLUMN turns JSON"))
 
-        # test_results: contagem de turnos executados
+        # test_results: contagem de turnos e histórico multi-turn
         tr_cols = {c["name"] for c in insp.get_columns("test_results")}
         if "turns_executed" not in tr_cols:
             conn.execute(text("ALTER TABLE test_results ADD COLUMN turns_executed INTEGER"))
+        if "turn_outputs" not in tr_cols:
+            conn.execute(text("ALTER TABLE test_results ADD COLUMN turn_outputs JSON"))
 
         # dataset_records: agrupamento por sessão
         dr_cols = {c["name"] for c in insp.get_columns("dataset_records")}
@@ -80,6 +87,26 @@ def _bootstrap_local_workspaces():
 
 _bootstrap_local_workspaces()
 
+
+def _recover_stuck_runs():
+    """Marca como 'failed' qualquer run/avaliação que ficou presa como 'running' após um restart."""
+    from .models import TestRun, DatasetEvaluation
+    db = SessionLocal()
+    try:
+        stuck_runs = db.query(TestRun).filter(TestRun.status == "running").all()
+        for r in stuck_runs:
+            r.status = "failed"
+        stuck_evals = db.query(DatasetEvaluation).filter(DatasetEvaluation.status == "running").all()
+        for e in stuck_evals:
+            e.status = "failed"
+        if stuck_runs or stuck_evals:
+            db.commit()
+    finally:
+        db.close()
+
+
+_recover_stuck_runs()
+
 app = FastAPI(
     title="AgentEval API",
     description="Plataforma de avaliação e testes de agentes de IA",
@@ -88,7 +115,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

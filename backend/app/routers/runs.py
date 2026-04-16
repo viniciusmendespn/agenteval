@@ -12,6 +12,9 @@ from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
+# IDs de runs solicitadas para cancelamento (thread-safe via GIL para set ops)
+_CANCEL_REQUESTS: set[int] = set()
+
 
 def _enrich_run(run: TestRun, db: Session) -> dict:
     data = {c.name: getattr(run, c.name) for c in TestRun.__table__.columns}
@@ -40,6 +43,18 @@ def get_run(run_id: int, db: Session = Depends(get_db), workspace: WorkspaceCont
     if not run:
         raise HTTPException(404, "Execução não encontrada")
     return _enrich_run(run, db)
+
+
+@router.post("/{run_id}/cancel", status_code=200)
+def cancel_run(run_id: int, db: Session = Depends(get_db), workspace: WorkspaceContext = Depends(get_current_workspace)):
+    require_writer(workspace)
+    run = db.query(TestRun).filter(TestRun.id == run_id, TestRun.workspace_id == workspace.workspace_id).first()
+    if not run:
+        raise HTTPException(404, "Execução não encontrada")
+    if run.status != "running":
+        raise HTTPException(400, f"Execução não está em andamento (status: {run.status})")
+    _CANCEL_REQUESTS.add(run_id)
+    return {"ok": True, "message": "Cancelamento solicitado."}
 
 
 @router.delete("/{run_id}", status_code=204)
@@ -105,7 +120,12 @@ def _execute_run(run_id: int):
         ordered = [tc_map[i] for i in run.test_case_ids if i in tc_map]
 
         all_scores: list[float] = []
+        cancelled = False
         for tc in ordered:
+            if run_id in _CANCEL_REQUESTS:
+                _CANCEL_REQUESTS.discard(run_id)
+                cancelled = True
+                break
             result = _evaluate_case(run_id, tc, agent, profile)
             if result.scores:
                 for metric_name, score in result.scores.items():
@@ -114,7 +134,7 @@ def _execute_run(run_id: int):
             db.add(result)
             db.commit()
 
-        run.status = "completed"
+        run.status = "cancelled" if cancelled else "completed"
         run.overall_score = round(sum(all_scores) / len(all_scores), 4) if all_scores else None
         run.completed_at = datetime.utcnow()
         db.commit()
@@ -201,6 +221,7 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
             # ── Multi-turn: cada turno envia o mesmo session_id ao agente ──
             last_output = last_input = last_expected = None
             total_time_ms = 0.0
+            turn_outputs_list: list[dict] = []
             for i, turn in enumerate(turns):
                 t0 = time.time()
                 try:
@@ -216,8 +237,10 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
                 except Exception as e:
                     return TestResult(run_id=run_id, test_case_id=tc.id,
                                       passed=False, error=f"Turno {i + 1}: {e}",
-                                      turns_executed=i + 1)
+                                      turns_executed=i + 1,
+                                      turn_outputs=turn_outputs_list or None)
                 total_time_ms += (time.time() - t0) * 1000
+                turn_outputs_list.append({"input": turn["input"], "output": output})
                 last_output = output
                 last_input = turn["input"]
                 last_expected = turn.get("expected_output")
@@ -227,7 +250,8 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
             thresholds = _build_thresholds(profile)
             passed = compute_passed(scores, thresholds) if scores else True
             return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=last_output,
-                              scores=scores, reasons=reasons, passed=passed, turns_executed=len(turns))
+                              scores=scores, reasons=reasons, passed=passed,
+                              turns_executed=len(turns), turn_outputs=turn_outputs_list)
 
     except Exception as e:
         return TestResult(run_id=run_id, test_case_id=tc.id, passed=False, error=str(e))

@@ -12,6 +12,7 @@ class AgentCreate(BaseModel):
     connection_type: str = "http"
     request_body: str = '{"message": "{{message}}"}'
     output_field: str = "response"
+    system_prompt: Optional[str] = None
 
 class AgentOut(AgentCreate):
     id: int
@@ -101,6 +102,7 @@ class TestResultOut(BaseModel):
     passed: Optional[bool]
     error: Optional[str]
     turns_executed: Optional[int] = None
+    turn_outputs: Optional[list[dict]] = None
     created_at: datetime
 
     class Config:

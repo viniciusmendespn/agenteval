@@ -13,9 +13,38 @@ cd /d "%~dp0backend"
 if not exist ".env" (
     echo [1/5] Criando .env a partir do .env.example...
     copy .env.example .env >nul
-    echo       ATENCAO: edite backend\.env com suas credenciais antes de continuar.
+    echo.
+    echo  ============================================================
+    echo   ATENCAO: Configure suas credenciais antes de continuar.
+    echo.
+    echo   Edite o arquivo:  backend\.env
+    echo   Preencha:         JUDGE_API_KEY=seu_token_pessoal
+    echo.
+    echo   Obtenha seu token em: https://fusion-llm.brq.com
+    echo  ============================================================
     echo.
     pause
+)
+
+:: Valida se JUDGE_API_KEY foi configurado
+findstr /C:"JUDGE_API_KEY=CONFIGURAR_SEU_TOKEN_AQUI" .env >nul 2>&1
+if not errorlevel 1 (
+    echo.
+    echo  ERRO: JUDGE_API_KEY ainda nao foi configurado!
+    echo  Edite backend\.env e substitua CONFIGURAR_SEU_TOKEN_AQUI pelo seu token.
+    echo.
+    pause
+    exit /b 1
+)
+findstr /C:"JUDGE_API_KEY=" .env | findstr /V /C:"JUDGE_API_KEY=#" >nul 2>&1
+for /f "tokens=2 delims==" %%A in ('findstr /C:"JUDGE_API_KEY=" .env') do set KEY_VAL=%%A
+if "%KEY_VAL%"=="" (
+    echo.
+    echo  ERRO: JUDGE_API_KEY esta vazio em backend\.env!
+    echo  Preencha com seu token pessoal antes de continuar.
+    echo.
+    pause
+    exit /b 1
 )
 
 if not exist ".venv\Scripts\activate.bat" (

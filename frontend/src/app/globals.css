@@ -137,7 +137,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    border-radius: 0.5rem;
+    border-radius: 9999px;
     border: 1px solid var(--santander-red);
     background: var(--santander-red);
     padding: 0.5rem 1rem;
@@ -168,7 +168,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    border-radius: 0.5rem;
+    border-radius: 9999px;
     border: 1px solid var(--santander-line-strong);
     background: #fff;
     padding: 0.5rem 1rem;
@@ -190,13 +190,13 @@
   }
 
   .flame-link-action {
-    color: var(--santander-red);
+    color: var(--flame-teal);
     font-size: 0.75rem;
     font-weight: 700;
   }
 
   .flame-link-action:hover {
-    color: var(--santander-red-dark);
+    color: var(--flame-teal-dark);
     text-decoration: underline;
   }
 
@@ -225,6 +225,69 @@
     color: var(--santander-red);
     font-size: 0.75rem;
     font-weight: 700;
+  }
+
+  /* Tabs — linha vermelha no tab ativo */
+  .flame-tabs {
+    display: flex;
+    border-bottom: 2px solid var(--santander-line);
+  }
+
+  .flame-tab {
+    padding: 0.5rem 1.25rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #66707a;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    transition: color 150ms ease;
+  }
+
+  .flame-tab:hover {
+    color: var(--santander-ink);
+  }
+
+  .flame-tab-active {
+    color: var(--santander-red);
+    border-bottom-color: var(--santander-red);
+  }
+
+  /* Avatar — círculo vermelho com iniciais brancas */
+  .flame-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    background: var(--santander-red);
+    color: #fff;
+    font-weight: 700;
+    font-size: 0.875rem;
+  }
+
+  /* Tag informacional — teal (ex: "Novo", status informacional) */
+  .flame-tag {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: var(--flame-teal);
+    padding: 0.125rem 0.5rem;
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .flame-tag-soft {
+    background: var(--flame-teal-soft);
+    color: var(--flame-teal-dark);
+    border: 1px solid rgba(19, 126, 132, 0.25);
+  }
+
+  /* Divider */
+  .flame-divider {
+    border: none;
+    border-top: 1px solid var(--santander-line);
+    margin: 1rem 0;
   }
 
   .flame-empty {
@@ -344,4 +407,29 @@
   .focus\:border-red-500:focus {
     border-color: var(--flame-teal);
   }
+
+  /* ── Remapeamento blue-* → cores Santander ─────────────────────────────── */
+
+  /* Botões / active states: bg-blue-600/700 → vermelho */
+  .bg-blue-600, .bg-blue-700              { background-color: var(--santander-red) !important; }
+  .hover\:bg-blue-700:hover,
+  .hover\:bg-blue-500:hover               { background-color: var(--santander-red-dark) !important; }
+
+  /* Barras de progresso / conectores: bg-blue-500/300 → teal */
+  .bg-blue-500                            { background-color: var(--flame-teal) !important; }
+  .bg-blue-300                            { background-color: rgba(19, 126, 132, 0.35) !important; }
+
+  /* Info-boxes / drag-over: bg-blue-50/100 → teal suave */
+  .bg-blue-50, .bg-blue-100               { background-color: var(--flame-teal-soft) !important; }
+  .bg-blue-50\/30                         { background-color: rgba(19, 126, 132, 0.05) !important; }
+  .bg-blue-50\/60                         { background-color: rgba(19, 126, 132, 0.10) !important; }
+
+  /* Texto / links: text-blue-* → teal */
+  .text-blue-600, .text-blue-700,
+  .text-blue-800                          { color: var(--flame-teal) !important; }
+  .hover\:text-blue-800:hover,
+  .hover\:text-blue-700:hover             { color: var(--flame-teal-dark) !important; }
+
+  /* Bordas: border-blue-* → teal */
+  .border-blue-200, .border-blue-400      { border-color: rgba(19, 126, 132, 0.30) !important; }
 }
