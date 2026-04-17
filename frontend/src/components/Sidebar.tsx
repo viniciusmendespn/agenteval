@@ -33,7 +33,6 @@ const sections = [
     items: [
       { href: "/agents", label: "Agentes", icon: Bot },
       { href: "/profiles", label: "Perfis de Avaliação", icon: SlidersHorizontal },
-      { href: "/settings/workspaces", label: "Configurações", icon: Settings },
     ],
   },
   {
@@ -125,8 +124,23 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      <div className="border-t border-gray-200 px-5 py-3">
-        <p className="text-xs text-gray-400">{version ?? "AgentEval"}</p>
+      <div className="border-t border-gray-200 px-3 py-3 space-y-1">
+        <Link
+          href="/settings"
+          className={cn(
+            "relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors",
+            pathname.startsWith("/settings")
+              ? "bg-white text-red-700"
+              : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+          )}
+        >
+          {pathname.startsWith("/settings") && (
+            <span className="absolute left-0 top-2 h-6 w-0.5 rounded-full bg-red-600" />
+          )}
+          <Settings className="h-4 w-4 shrink-0 text-red-600" />
+          <span className="truncate">Configurações</span>
+        </Link>
+        <p className="px-3 text-xs text-gray-400">{version ?? "AgentEval"}</p>
       </div>
     </aside>
   )

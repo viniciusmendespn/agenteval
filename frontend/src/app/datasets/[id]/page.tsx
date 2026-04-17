@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback, useMemo } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { Upload, Trash2 } from "lucide-react"
-import { getDataset, bulkDeleteRecords, type DatasetDetail, type DatasetRecord } from "@/lib/api"
+import { Upload, Trash2, ChevronDown, ChevronUp, Save } from "lucide-react"
+import { getDataset, updateDataset, bulkDeleteRecords, type DatasetDetail, type DatasetRecord } from "@/lib/api"
 import AppendDatasetModal from "@/components/AppendDatasetModal"
 
 // Two subtle background tints that alternate between sessions
@@ -18,6 +18,9 @@ export default function DatasetPage() {
   const [showAppend, setShowAppend] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [deleting, setDeleting] = useState(false)
+  const [showPrompt, setShowPrompt] = useState(false)
+  const [promptEdit, setPromptEdit] = useState("")
+  const [savingPrompt, setSavingPrompt] = useState(false)
 
   const load = useCallback(() => {
     getDataset(id).then(data => {
@@ -27,6 +30,7 @@ export default function DatasetPage() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { if (ds) setPromptEdit(ds.system_prompt ?? "") }, [ds?.system_prompt])
 
   // Detect session data and sort by (session_id, turn_order) if present
   const { sortedRecords, hasSessionData } = useMemo(() => {
@@ -71,6 +75,17 @@ export default function DatasetPage() {
     })
   }
 
+  async function handleSavePrompt() {
+    if (!ds) return
+    setSavingPrompt(true)
+    try {
+      await updateDataset(ds.id, { system_prompt: promptEdit || undefined })
+      load()
+    } finally {
+      setSavingPrompt(false)
+    }
+  }
+
   async function handleDeleteSelected() {
     if (!ds || selected.size === 0) return
     const confirmed = window.confirm(
@@ -110,6 +125,43 @@ export default function DatasetPage() {
             Avaliar dataset
           </Link>
         </div>
+      </div>
+
+      {/* System Prompt */}
+      <div className="mb-4 flame-panel overflow-hidden">
+        <button
+          onClick={() => setShowPrompt(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
+        >
+          <span>
+            System Prompt do Dataset
+            {ds.system_prompt && <span className="ml-2 text-xs text-green-600 font-normal">configurado</span>}
+          </span>
+          {showPrompt ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+        </button>
+        {showPrompt && (
+          <div className="px-5 pb-4 space-y-2 border-t border-gray-100">
+            <p className="text-xs text-gray-500 pt-3">
+              Contexto global injetado em todas as avaliações deste dataset. Use para descrever as instruções do agente que gerou as respostas.
+            </p>
+            <textarea
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none font-mono min-h-[100px]"
+              value={promptEdit}
+              onChange={e => setPromptEdit(e.target.value)}
+              placeholder="Ex: Você é um assistente de suporte bancário. Responda sempre com empatia e clareza..."
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={handleSavePrompt}
+                disabled={savingPrompt}
+                className="flame-button flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Save className="h-3.5 w-3.5" />
+                {savingPrompt ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Bulk action bar */}

@@ -8,6 +8,7 @@ from ..models import Agent, EvaluationProfile, TestCase, TestRun, TestResult
 from ..schemas import TestRunCreate, TestRunOut
 from ..services.agent_caller import call_agent
 from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
+from ..services.judge_llm import resolve_judge
 from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/runs", tags=["runs"])
@@ -119,6 +120,8 @@ def _execute_run(run_id: int):
         tc_map = {tc.id: tc for tc in test_cases}
         ordered = [tc_map[i] for i in run.test_case_ids if i in tc_map]
 
+        judge_override = resolve_judge(db, getattr(profile, "llm_provider_id", None))
+
         all_scores: list[float] = []
         cancelled = False
         for tc in ordered:
@@ -126,7 +129,7 @@ def _execute_run(run_id: int):
                 _CANCEL_REQUESTS.discard(run_id)
                 cancelled = True
                 break
-            result = _evaluate_case(run_id, tc, agent, profile)
+            result = _evaluate_case(run_id, tc, agent, profile, judge_override=judge_override)
             if result.scores:
                 for metric_name, score in result.scores.items():
                     normalized = (1.0 - score) if metric_name in LOWER_IS_BETTER else score
@@ -153,19 +156,20 @@ def _execute_run(run_id: int):
 
 def _build_thresholds(profile: EvaluationProfile) -> dict:
     return {
-        "relevancy":      profile.relevancy_threshold,
-        "hallucination":  profile.hallucination_threshold,
-        "toxicity":       getattr(profile, "toxicity_threshold", 0.5),
-        "bias":           getattr(profile, "bias_threshold", 0.5),
-        "faithfulness":   getattr(profile, "faithfulness_threshold", 0.5),
-        "latency":        0.5,
-        "non_advice":     getattr(profile, "non_advice_threshold", 0.5),
-        "role_violation": getattr(profile, "role_violation_threshold", 0.5),
+        "relevancy":         profile.relevancy_threshold,
+        "hallucination":     profile.hallucination_threshold,
+        "toxicity":          getattr(profile, "toxicity_threshold", 0.5),
+        "bias":              getattr(profile, "bias_threshold", 0.5),
+        "faithfulness":      getattr(profile, "faithfulness_threshold", 0.5),
+        "latency":           0.5,
+        "non_advice":        getattr(profile, "non_advice_threshold", 0.5),
+        "role_violation":    getattr(profile, "role_violation_threshold", 0.5),
+        "prompt_alignment":  getattr(profile, "prompt_alignment_threshold", 0.5),
         **{f"criterion_{i}": 0.5 for i in range(len(profile.criteria or []))},
     }
 
 
-def _call_evaluate(input_text, actual_output, expected_output, context, response_time_ms, profile):
+def _call_evaluate(input_text, actual_output, expected_output, context, response_time_ms, profile, system_prompt=None, judge_override=None):
     return evaluate_response(
         input_text=input_text,
         actual_output=actual_output,
@@ -191,10 +195,14 @@ def _call_evaluate(input_text, actual_output, expected_output, context, response
         use_role_violation=getattr(profile, "use_role_violation", False),
         role_violation_threshold=getattr(profile, "role_violation_threshold", 0.5),
         role_violation_role=getattr(profile, "role_violation_role", None) or "",
+        use_prompt_alignment=getattr(profile, "use_prompt_alignment", False),
+        prompt_alignment_threshold=getattr(profile, "prompt_alignment_threshold", 0.5),
+        system_prompt=system_prompt,
+        judge_override=judge_override,
     )
 
 
-def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationProfile) -> TestResult:
+def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationProfile, judge_override=None) -> TestResult:
     session_id = str(uuid.uuid4())
     turns = tc.turns if (tc.turns and len(tc.turns) > 0) else None
 
@@ -217,7 +225,7 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
                 token_header_name=getattr(agent, "token_header_name", None),
             )
             response_time_ms = (time.time() - t0) * 1000
-            scores, reasons = _call_evaluate(tc.input, actual_output, tc.expected_output, tc.context, response_time_ms, profile)
+            scores, reasons = _call_evaluate(tc.input, actual_output, tc.expected_output, tc.context, response_time_ms, profile, system_prompt=agent.system_prompt, judge_override=judge_override)
             thresholds = _build_thresholds(profile)
             passed = compute_passed(scores, thresholds) if scores else True
             return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=actual_output,
@@ -256,7 +264,7 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
                 last_expected = turn.get("expected_output")
 
             # Avalia apenas o último turno (sinal de qualidade final)
-            scores, reasons = _call_evaluate(last_input, last_output, last_expected, tc.context, total_time_ms, profile)
+            scores, reasons = _call_evaluate(last_input, last_output, last_expected, tc.context, total_time_ms, profile, system_prompt=agent.system_prompt, judge_override=judge_override)
             thresholds = _build_thresholds(profile)
             passed = compute_passed(scores, thresholds) if scores else True
             return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=last_output,

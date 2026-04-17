@@ -7,12 +7,14 @@ const statusColor: Record<string, string> = {
   completed: "bg-green-100 text-green-700",
   running:   "bg-yellow-100 text-yellow-700",
   failed:    "bg-red-100 text-red-700",
+  cancelled: "bg-orange-100 text-orange-700",
   pending:   "bg-gray-100 text-gray-500",
 }
 const statusLabel: Record<string, string> = {
   completed: "Concluída",
   running:   "Executando",
   failed:    "Falhou",
+  cancelled: "Cancelada",
   pending:   "Pendente",
 }
 

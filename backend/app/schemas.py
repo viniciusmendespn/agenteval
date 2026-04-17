@@ -3,6 +3,24 @@ from typing import Optional
 from pydantic import BaseModel, field_validator
 
 
+# --- LLMProvider ---
+
+class LLMProviderCreate(BaseModel):
+    name: str
+    provider_type: str = "azure"
+    base_url: Optional[str] = None
+    api_key: str
+    model_name: str
+    api_version: Optional[str] = None
+
+class LLMProviderOut(LLMProviderCreate):
+    id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # --- Agent ---
 
 class AgentCreate(BaseModel):
@@ -72,6 +90,9 @@ class EvaluationProfileCreate(BaseModel):
     use_role_violation: bool = False
     role_violation_threshold: float = 0.5
     role_violation_role: str = ""
+    use_prompt_alignment: bool = False
+    prompt_alignment_threshold: float = 0.5
+    llm_provider_id: Optional[int] = None
 
     @field_validator("non_advice_types", mode="before")
     @classmethod
@@ -135,6 +156,7 @@ class TestRunOut(BaseModel):
 class DatasetCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    system_prompt: Optional[str] = None
 
 class DatasetRecordOut(BaseModel):
     id: int
@@ -153,6 +175,7 @@ class DatasetOut(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    system_prompt: Optional[str] = None
     created_at: datetime
     record_count: int = 0
 
@@ -163,6 +186,7 @@ class DatasetDetailOut(BaseModel):
     id: int
     name: str
     description: Optional[str]
+    system_prompt: Optional[str] = None
     created_at: datetime
     records: list[DatasetRecordOut] = []
 

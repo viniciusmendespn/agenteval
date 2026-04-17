@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -46,12 +47,38 @@ def create_dataset(
     workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
     require_writer(workspace)
-    ds = Dataset(name=data.name, description=data.description, workspace_id=workspace.workspace_id)
+    ds = Dataset(name=data.name, description=data.description, system_prompt=data.system_prompt, workspace_id=workspace.workspace_id)
     db.add(ds)
     db.commit()
     db.refresh(ds)
     return DatasetOut(id=ds.id, name=ds.name, description=ds.description,
-                      created_at=ds.created_at, record_count=0)
+                      system_prompt=ds.system_prompt, created_at=ds.created_at, record_count=0)
+
+
+class DatasetUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    system_prompt: Optional[str] = None
+
+
+@router.patch("/{dataset_id}", response_model=DatasetOut)
+def update_dataset(
+    dataset_id: int,
+    data: DatasetUpdate,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    require_writer(workspace)
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
+    if not ds:
+        raise HTTPException(404, "Dataset não encontrado")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(ds, field, value)
+    db.commit()
+    db.refresh(ds)
+    count = db.query(DatasetRecord).filter(DatasetRecord.dataset_id == ds.id).count()
+    return DatasetOut(id=ds.id, name=ds.name, description=ds.description,
+                      system_prompt=ds.system_prompt, created_at=ds.created_at, record_count=count)
 
 
 @router.delete("/{dataset_id}", status_code=204)

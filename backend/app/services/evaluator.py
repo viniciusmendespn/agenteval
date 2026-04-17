@@ -1,10 +1,7 @@
-import math
 import json
 import os
 from deepeval.metrics import AnswerRelevancyMetric, HallucinationMetric, GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
-from .judge_llm import get_judge
-
 # Métricas onde score menor = melhor (ausência do problema)
 LOWER_IS_BETTER = {"hallucination", "toxicity", "bias", "non_advice", "role_violation"}
 
@@ -93,6 +90,12 @@ try:
 except ImportError:
     _HAS_ROLE_VIOLATION = False
 
+try:
+    from deepeval.metrics import PromptAlignmentMetric
+    _HAS_PROMPT_ALIGNMENT = True
+except ImportError:
+    _HAS_PROMPT_ALIGNMENT = False
+
 
 def evaluate_response(
     input_text: str,
@@ -123,6 +126,12 @@ def evaluate_response(
     use_role_violation: bool = False,
     role_violation_threshold: float = 0.5,
     role_violation_role: str | None = None,
+    # aderência ao system prompt
+    use_prompt_alignment: bool = False,
+    prompt_alignment_threshold: float = 0.5,
+    system_prompt: str | None = None,
+    # LLM judge override (instância CustomJudgeLLM ou None)
+    judge_override=None,
 ) -> tuple[dict[str, float], dict[str, str]]:
     """
     Avalia uma resposta do agente usando DeepEval.
@@ -130,7 +139,7 @@ def evaluate_response(
       scores  = { nome_metrica: score_float }
       reasons = { nome_metrica: explicacao_da_llm }
     """
-    judge = get_judge()
+    judge = judge_override
 
     test_case = LLMTestCase(
         input=input_text,
@@ -227,6 +236,21 @@ def evaluate_response(
         metric.measure(test_case)
         scores[key] = round(metric.score or 0.0, 4)
         reasons[key] = metric.reason or ""
+
+    if use_prompt_alignment and system_prompt and _HAS_PROMPT_ALIGNMENT:
+        instructions = [line.strip() for line in system_prompt.splitlines() if line.strip()] or [system_prompt]
+        metric = PromptAlignmentMetric(
+            prompt_instructions=instructions,
+            threshold=prompt_alignment_threshold,
+            model=judge,
+        )
+        metric.measure(test_case)
+        scores["prompt_alignment"] = round(metric.score or 0.0, 4)
+        reasons["prompt_alignment"] = metric.reason or ""
+    elif use_prompt_alignment and not system_prompt:
+        reasons["prompt_alignment"] = "PromptAlignment requer system prompt cadastrado no agente ou dataset"
+    elif use_prompt_alignment and not _HAS_PROMPT_ALIGNMENT:
+        reasons["prompt_alignment"] = "PromptAlignmentMetric não disponível nesta versão do DeepEval"
 
     reasons = _translate_reasons(reasons, judge)
     return scores, reasons

@@ -5,6 +5,7 @@ from ..database import get_db, SessionLocal
 from ..models import Dataset, DatasetRecord, DatasetEvaluation, DatasetResult, EvaluationProfile
 from ..schemas import DatasetEvaluationCreate, DatasetEvaluationOut
 from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
+from ..services.judge_llm import resolve_judge
 from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/datasets/{dataset_id}/evaluations", tags=["dataset-evaluations"])
@@ -83,15 +84,19 @@ def _execute_evaluation(eval_id: int):
     try:
         ev = db.get(DatasetEvaluation, eval_id)
         profile = db.get(EvaluationProfile, ev.profile_id)
+        dataset = db.get(Dataset, ev.dataset_id)
         records = (
             db.query(DatasetRecord)
             .filter(DatasetRecord.dataset_id == ev.dataset_id)
             .all()
         )
 
+        dataset_system_prompt = getattr(dataset, "system_prompt", None)
+        judge_override = resolve_judge(db, getattr(profile, "llm_provider_id", None))
+
         all_scores: list[float] = []
         for record in records:
-            result = _evaluate_record(eval_id, record, profile)
+            result = _evaluate_record(eval_id, record, profile, system_prompt=dataset_system_prompt, judge_override=judge_override)
             if result.scores:
                 for metric_name, score in result.scores.items():
                     normalized = (1.0 - score) if metric_name in LOWER_IS_BETTER else score
@@ -116,7 +121,7 @@ def _execute_evaluation(eval_id: int):
         db.close()
 
 
-def _evaluate_record(eval_id: int, record: DatasetRecord, profile: EvaluationProfile) -> DatasetResult:
+def _evaluate_record(eval_id: int, record: DatasetRecord, profile: EvaluationProfile, system_prompt=None, judge_override=None) -> DatasetResult:
     try:
         if not record.actual_output:
             raise ValueError("Registro sem resposta — não é possível avaliar")
@@ -143,16 +148,21 @@ def _evaluate_record(eval_id: int, record: DatasetRecord, profile: EvaluationPro
             use_role_violation=getattr(profile, "use_role_violation", False),
             role_violation_threshold=getattr(profile, "role_violation_threshold", 0.5),
             role_violation_role=getattr(profile, "role_violation_role", None) or "",
+            use_prompt_alignment=getattr(profile, "use_prompt_alignment", False),
+            prompt_alignment_threshold=getattr(profile, "prompt_alignment_threshold", 0.5),
+            system_prompt=system_prompt,
+            judge_override=judge_override,
         )
         thresholds = {
-            "relevancy":      profile.relevancy_threshold,
-            "hallucination":  profile.hallucination_threshold,
-            "toxicity":       getattr(profile, "toxicity_threshold", 0.5),
-            "bias":           getattr(profile, "bias_threshold", 0.5),
-            "faithfulness":   getattr(profile, "faithfulness_threshold", 0.5),
-            "latency":        0.5,
-            "non_advice":     getattr(profile, "non_advice_threshold", 0.5),
-            "role_violation": getattr(profile, "role_violation_threshold", 0.5),
+            "relevancy":        profile.relevancy_threshold,
+            "hallucination":    profile.hallucination_threshold,
+            "toxicity":         getattr(profile, "toxicity_threshold", 0.5),
+            "bias":             getattr(profile, "bias_threshold", 0.5),
+            "faithfulness":     getattr(profile, "faithfulness_threshold", 0.5),
+            "latency":          0.5,
+            "non_advice":       getattr(profile, "non_advice_threshold", 0.5),
+            "role_violation":   getattr(profile, "role_violation_threshold", 0.5),
+            "prompt_alignment": getattr(profile, "prompt_alignment_threshold", 0.5),
             **{f"criterion_{i}": 0.5 for i in range(len(profile.criteria or []))},
         }
         passed = compute_passed(scores, thresholds) if scores else True

@@ -39,6 +39,19 @@ class TestCase(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class LLMProvider(Base):
+    __tablename__ = "llm_providers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    provider_type = Column(String, default="azure")  # azure | openai | custom
+    base_url = Column(String, nullable=True)
+    api_key = Column(String, nullable=False)
+    model_name = Column(String, nullable=False)
+    api_version = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class EvaluationProfile(Base):
     __tablename__ = "evaluation_profiles"
 
@@ -64,7 +77,12 @@ class EvaluationProfile(Base):
     use_role_violation = Column(Boolean, default=False)
     role_violation_threshold = Column(Float, default=0.5)
     role_violation_role = Column(Text, nullable=True)
+    use_prompt_alignment = Column(Boolean, default=False)
+    prompt_alignment_threshold = Column(Float, default=0.5)
+    llm_provider_id = Column(Integer, ForeignKey("llm_providers.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    llm_provider = relationship("LLMProvider")
 
 
 class TestRun(Base):
@@ -115,6 +133,7 @@ class Dataset(Base):
     workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
+    system_prompt = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     records = relationship("DatasetRecord", back_populates="dataset", cascade="all, delete-orphan")

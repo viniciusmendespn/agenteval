@@ -21,6 +21,7 @@ export default function ImportDatasetPage() {
   // dataset info
   const [datasetName, setDatasetName] = useState("")
   const [datasetDescription, setDatasetDescription] = useState("")
+  const [datasetSystemPrompt, setDatasetSystemPrompt] = useState("")
 
   // mapeamento
   const [inputPath, setInputPath] = useState("")
@@ -91,6 +92,7 @@ export default function ImportDatasetPage() {
     return {
       dataset_name: datasetName.trim(),
       dataset_description: datasetDescription.trim() || undefined,
+      dataset_system_prompt: datasetSystemPrompt.trim() || undefined,
       file_ids: [analysis!.file_id, ...extraFiles.map(f => f.file_id)],
       input_path: inputPath,
       output_path: outputPath === NONE ? undefined : outputPath,
@@ -135,6 +137,13 @@ export default function ImportDatasetPage() {
               <input className={inp} value={datasetDescription}
                 onChange={e => setDatasetDescription(e.target.value)}
                 placeholder="Opcional" />
+            </div>
+            <div>
+              <label className={lbl}>System Prompt <span className="text-gray-400 font-normal">(opcional)</span></label>
+              <p className="text-xs text-gray-400 mb-1">Instruções do agente que gerou as respostas. Usado como contexto nas avaliações.</p>
+              <textarea className={`${inp} font-mono min-h-[80px]`} value={datasetSystemPrompt}
+                onChange={e => setDatasetSystemPrompt(e.target.value)}
+                placeholder="Ex: Você é um assistente de suporte bancário..." />
             </div>
           </div>
 

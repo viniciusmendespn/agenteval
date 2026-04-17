@@ -65,13 +65,6 @@ export default function WorkspaceSettingsPage() {
 
   return (
     <div className="max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Configurações</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Gerencie os workspaces usados para separar agentes, testes, execuções e datasets.
-        </p>
-      </div>
-
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}

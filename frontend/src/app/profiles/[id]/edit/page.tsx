@@ -30,6 +30,9 @@ export default function EditProfilePage() {
       use_role_violation: p.use_role_violation ?? false,
       role_violation_threshold: p.role_violation_threshold ?? 0.5,
       role_violation_role: p.role_violation_role ?? "Agente de atendimento",
+      use_prompt_alignment: p.use_prompt_alignment ?? false,
+      prompt_alignment_threshold: p.prompt_alignment_threshold ?? 0.5,
+      llm_provider_id: p.llm_provider_id ?? null,
     })).catch(() => {})
   }, [id])
 

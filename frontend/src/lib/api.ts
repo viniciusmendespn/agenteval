@@ -44,6 +44,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // --- Types ---
 
+export type LLMProvider = {
+  id: number
+  name: string
+  provider_type: "azure" | "openai" | "custom"
+  base_url?: string
+  api_key: string
+  model_name: string
+  api_version?: string
+  created_at: string
+}
+
 export type Agent = {
   id: number
   name: string
@@ -100,6 +111,9 @@ export type EvaluationProfile = {
   use_role_violation: boolean
   role_violation_threshold: number
   role_violation_role: string
+  use_prompt_alignment: boolean
+  prompt_alignment_threshold: number
+  llm_provider_id?: number | null
   created_at: string
 }
 
@@ -199,6 +213,7 @@ export type Dataset = {
   id: number
   name: string
   description?: string
+  system_prompt?: string
   record_count: number
   created_at: string
 }
@@ -207,6 +222,7 @@ export type DatasetDetail = {
   id: number
   name: string
   description?: string
+  system_prompt?: string
   created_at: string
   records: DatasetRecord[]
 }
@@ -240,6 +256,15 @@ export type Workspace = {
   created_at: string
 }
 
+// --- LLM Providers ---
+export const getLLMProviders = () => request<LLMProvider[]>("/llm-providers/")
+export const createLLMProvider = (data: Omit<LLMProvider, "id" | "created_at">) =>
+  request<LLMProvider>("/llm-providers/", { method: "POST", body: JSON.stringify(data) })
+export const updateLLMProvider = (id: number, data: Omit<LLMProvider, "id" | "created_at">) =>
+  request<LLMProvider>(`/llm-providers/${id}`, { method: "PUT", body: JSON.stringify(data) })
+export const deleteLLMProvider = (id: number) =>
+  request<void>(`/llm-providers/${id}`, { method: "DELETE" })
+
 // --- Workspaces ---
 export const getWorkspaces = () => request<Workspace[]>("/workspaces/")
 export const getCurrentWorkspace = () => request<Workspace>("/workspaces/current")
@@ -255,6 +280,10 @@ export const updateAgent = (id: number, data: Omit<Agent, "id" | "created_at">) 
   request<Agent>(`/agents/${id}`, { method: "PUT", body: JSON.stringify(data) })
 export const deleteAgent = (id: number) =>
   request<void>(`/agents/${id}`, { method: "DELETE" })
+export const optimizeAgentPrompt = (id: number) =>
+  request<{ current_prompt: string; suggested_prompt: string; reasoning: string; failed_cases_analyzed: number }>(
+    `/agents/${id}/optimize-prompt`, { method: "POST" }
+  )
 export const testConnection = (url: string, api_key: string) =>
   request<{ ok: boolean; status_code?: number; error?: string }>("/agents/test-connection", {
     method: "POST", body: JSON.stringify({ url, api_key }),
@@ -298,6 +327,8 @@ export const createRun = (data: { agent_id: number; profile_id: number; test_cas
 // --- Datasets (avaliação de histórico) ---
 export const getDatasets = () => request<Dataset[]>("/datasets/")
 export const getDataset = (id: number) => request<DatasetDetail>(`/datasets/${id}`)
+export const updateDataset = (id: number, data: { name?: string; description?: string; system_prompt?: string }) =>
+  request<Dataset>(`/datasets/${id}`, { method: "PATCH", body: JSON.stringify(data) })
 export const deleteDataset = (id: number) => request<void>(`/datasets/${id}`, { method: "DELETE" })
 export const deleteDatasetRecord = (datasetId: number, recordId: number) =>
   request<void>(`/datasets/${datasetId}/records/${recordId}`, { method: "DELETE" })
@@ -319,6 +350,7 @@ export const createDatasetEvaluation = (datasetId: number, profileId: number) =>
 export type MappingRequest = {
   dataset_name: string
   dataset_description?: string
+  dataset_system_prompt?: string
   file_ids: string[]
   input_path: string
   output_path?: string

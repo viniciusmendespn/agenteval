@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import { cn } from "@/lib/cn"
+import LLMProviderSelector from "./LLMProviderSelector"
 
 export type ProfileFormData = {
   name: string
@@ -23,6 +24,9 @@ export type ProfileFormData = {
   use_role_violation: boolean
   role_violation_threshold: number
   role_violation_role: string
+  use_prompt_alignment: boolean
+  prompt_alignment_threshold: number
+  llm_provider_id: number | null
 }
 
 interface Props {
@@ -60,6 +64,9 @@ const DEFAULT: ProfileFormData = {
   use_role_violation: false,
   role_violation_threshold: 0.5,
   role_violation_role: "Agente de atendimento",
+  use_prompt_alignment: false,
+  prompt_alignment_threshold: 0.5,
+  llm_provider_id: null,
 }
 
 type MetricConfig = {
@@ -166,6 +173,20 @@ const METRICS: MetricConfig[] = [
     color: "border-red-200 bg-red-50/30",
     accentColor: "red",
     category: "compliance",
+  },
+  // Instrução
+  {
+    key: "use_prompt_alignment",
+    thresholdKey: "prompt_alignment_threshold",
+    label: "Aderência ao System Prompt",
+    displayLabel: "Aderência ao Prompt",
+    description: "Verifica se a resposta do agente segue as instruções do system prompt cadastrado. Requer que o agente (ou dataset) tenha system prompt configurado.",
+    thresholdLabel: "Score mínimo para aprovação",
+    thresholdHint: ["0% — qualquer", "100% — perfeito"],
+    note: "Requer system prompt",
+    color: "border-blue-200 bg-blue-50/30",
+    accentColor: "red",
+    category: "quality",
   },
   // Performance
   {
@@ -298,10 +319,16 @@ export default function ProfileForm({ initial, onSubmit, submitLabel = "Salvar p
     <form onSubmit={handleSubmit} className="space-y-4">
 
       {/* Nome */}
-      <section className="flame-panel p-5">
-        <label className={lbl}>Nome do perfil *</label>
-        <p className={hint}>Nome descritivo para este conjunto de métricas. Ex: "Suporte ao Cliente", "Vendas".</p>
-        <input className={inp} value={form.name} onChange={e => setField("name", e.target.value)} required />
+      <section className="flame-panel p-5 space-y-4">
+        <div>
+          <label className={lbl}>Nome do perfil *</label>
+          <p className={hint}>Nome descritivo para este conjunto de métricas. Ex: "Suporte ao Cliente", "Vendas".</p>
+          <input className={inp} value={form.name} onChange={e => setField("name", e.target.value)} required />
+        </div>
+        <LLMProviderSelector
+          value={form.llm_provider_id}
+          onChange={v => setField("llm_provider_id", v)}
+        />
       </section>
 
       {/* Cobertura */}

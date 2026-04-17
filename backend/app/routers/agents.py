@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Agent
+from ..models import Agent, TestRun, TestResult
 from ..schemas import AgentCreate, AgentOut
+from ..services.judge_llm import resolve_judge
 from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -175,3 +176,87 @@ def delete_agent(agent_id: int, db: Session = Depends(get_db), workspace: Worksp
         raise HTTPException(404, "Agente não encontrado")
     db.delete(agent)
     db.commit()
+
+
+@router.post("/{agent_id}/optimize-prompt")
+def optimize_prompt(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
+    if not agent:
+        raise HTTPException(404, "Agente não encontrado")
+    if not agent.system_prompt:
+        raise HTTPException(400, "Agente não possui system prompt cadastrado")
+
+    # Busca as últimas 5 runs desse agente no workspace
+    runs = (
+        db.query(TestRun)
+        .filter(TestRun.agent_id == agent_id, TestRun.workspace_id == workspace.workspace_id, TestRun.status == "completed")
+        .order_by(TestRun.created_at.desc())
+        .limit(5)
+        .all()
+    )
+    if not runs:
+        raise HTTPException(400, "Nenhuma execução completada encontrada para este agente. Execute ao menos uma avaliação antes de otimizar.")
+
+    # Coleta casos que falharam
+    from ..models import TestCase
+    failed_cases = []
+    for run in runs:
+        results = db.query(TestResult).filter(TestResult.run_id == run.id, TestResult.passed == False).all()
+        for r in results:
+            if r.actual_output:
+                tc = db.get(TestCase, r.test_case_id)
+                failed_cases.append({
+                    "input_text": tc.input if tc else "(desconhecido)",
+                    "output": r.actual_output,
+                    "scores": r.scores or {},
+                    "reasons": r.reasons or {},
+                })
+            if len(failed_cases) >= 10:
+                break
+        if len(failed_cases) >= 10:
+            break
+
+    # Monta contexto para o LLM
+    cases_text = ""
+    for i, c in enumerate(failed_cases[:8], 1):
+        reasons_text = "; ".join(f"{k}: {v}" for k, v in c["reasons"].items() if v) or "sem motivo"
+        scores_text = ", ".join(f"{k}={round(v*100)}%" for k, v in c["scores"].items()) or ""
+        cases_text += f"\n--- Caso {i} ---\nEntrada: {c['input_text']}\nResposta: {c['output']}\nScores: {scores_text}\nMotivos: {reasons_text}\n"
+
+    prompt = (
+        "Você é um especialista em engenharia de prompts para agentes de IA.\n\n"
+        f"System prompt atual do agente:\n{agent.system_prompt}\n\n"
+        f"Casos de teste que falharam nas avaliações recentes:{cases_text}\n\n"
+        "Com base nos problemas identificados, sugira uma versão melhorada do system prompt que:\n"
+        "1. Corrija as deficiências apontadas nos motivos de falha\n"
+        "2. Mantenha o objetivo e tom originais\n"
+        "3. Seja claro e específico nas instruções\n\n"
+        "Responda APENAS com JSON no formato:\n"
+        '{"suggested_prompt": "...", "reasoning": "explicação das mudanças em 2-3 frases"}'
+    )
+
+    judge = resolve_judge(db)
+    if judge is None:
+        raise HTTPException(503, "Nenhum provedor LLM configurado. Adicione um em Configurações → Provedores LLM.")
+
+    try:
+        result_text, _ = judge.generate(prompt)
+        import re
+        json_match = re.search(r'\{.*\}', str(result_text), re.DOTALL)
+        if json_match:
+            data = json.loads(json_match.group())
+        else:
+            data = json.loads(str(result_text))
+    except Exception as e:
+        raise HTTPException(500, f"Erro ao gerar sugestão: {e}")
+
+    return {
+        "current_prompt": agent.system_prompt,
+        "suggested_prompt": data.get("suggested_prompt", ""),
+        "reasoning": data.get("reasoning", ""),
+        "failed_cases_analyzed": len(failed_cases),
+    }

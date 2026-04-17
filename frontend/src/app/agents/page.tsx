@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Bot, Plus } from "lucide-react"
+import { Bot, Plus, Sparkles } from "lucide-react"
 import { getAgents, type Agent } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { TableSkeleton } from "@/components/Skeleton"
@@ -72,6 +72,16 @@ export default function AgentsPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
+                      {a.system_prompt && (
+                        <Link
+                          href={`/agents/${a.id}/optimize`}
+                          className="flame-link-action flex items-center gap-1"
+                          title="Sugerir otimização do system prompt com base nas avaliações"
+                        >
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Otimizar
+                        </Link>
+                      )}
                       <Link href={`/agents/${a.id}/edit`} className="flame-link-action">
                         Editar
                       </Link>

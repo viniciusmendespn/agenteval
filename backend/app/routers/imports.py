@@ -24,6 +24,7 @@ router = APIRouter(prefix="/imports", tags=["imports"])
 class MappingRequest(BaseModel):
     dataset_name: str
     dataset_description: Optional[str] = None
+    dataset_system_prompt: Optional[str] = None
     file_ids: list[str]
     input_path: str
     output_path: Optional[str] = None
@@ -128,6 +129,7 @@ def confirm_import(
     ds = Dataset(
         name=data.dataset_name,
         description=data.dataset_description,
+        system_prompt=data.dataset_system_prompt,
         workspace_id=workspace.workspace_id,
     )
     db.add(ds)

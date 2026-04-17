@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text, inspect
 from .database import engine, Base, SessionLocal
 from .routers import agents, test_cases, profiles, runs, imports, datasets, dataset_evaluations, workspaces
-from .routers import analytics, chat
+from .routers import analytics, chat, llm_providers
 from .workspace import ensure_local_workspaces, ensure_user, remove_legacy_default_workspace
 
 Base.metadata.create_all(bind=engine)
@@ -88,9 +88,56 @@ def _migrate():
         if "variables" not in tc_cols:
             conn.execute(text("ALTER TABLE test_cases ADD COLUMN variables JSON"))
 
+        # evaluation_profiles: prompt alignment + llm provider
+        ep_cols = {c["name"] for c in insp.get_columns("evaluation_profiles")}
+        if "use_prompt_alignment" not in ep_cols:
+            conn.execute(text("ALTER TABLE evaluation_profiles ADD COLUMN use_prompt_alignment BOOLEAN DEFAULT 0 NOT NULL"))
+        if "prompt_alignment_threshold" not in ep_cols:
+            conn.execute(text("ALTER TABLE evaluation_profiles ADD COLUMN prompt_alignment_threshold FLOAT DEFAULT 0.5 NOT NULL"))
+        if "llm_provider_id" not in ep_cols:
+            conn.execute(text("ALTER TABLE evaluation_profiles ADD COLUMN llm_provider_id INTEGER REFERENCES llm_providers(id)"))
+
+        # datasets: system_prompt como contexto de avaliação
+        ds_cols = {c["name"] for c in insp.get_columns("datasets")}
+        if "system_prompt" not in ds_cols:
+            conn.execute(text("ALTER TABLE datasets ADD COLUMN system_prompt TEXT"))
+
         conn.commit()
 
 _migrate()
+
+
+def _bootstrap_llm_provider():
+    """Se JUDGE_BASE_URL ou JUDGE_API_KEY existem e não há providers no workspace 1, migra automaticamente."""
+    import os
+    base_url = os.getenv("JUDGE_BASE_URL")
+    api_key = os.getenv("JUDGE_API_KEY", "")
+    model_name = os.getenv("JUDGE_MODEL", "gpt-4")
+    api_version = os.getenv("JUDGE_API_VERSION", "2024-02-01")
+
+    if not base_url and not api_key:
+        return
+
+    from .models import LLMProvider
+    db = SessionLocal()
+    try:
+        if db.query(LLMProvider).first():
+            return
+        provider_type = "openai" if not base_url else "azure"
+        db.add(LLMProvider(
+            name="Judge LLM (migrado do .env)",
+            provider_type=provider_type,
+            base_url=base_url,
+            api_key=api_key,
+            model_name=model_name,
+            api_version=api_version if provider_type == "azure" else None,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+
+_bootstrap_llm_provider()
 
 
 def _bootstrap_local_workspaces():
@@ -150,6 +197,7 @@ app.include_router(datasets.router)
 app.include_router(dataset_evaluations.router)
 app.include_router(analytics.router)
 app.include_router(chat.router)
+app.include_router(llm_providers.router)
 
 
 @app.get("/health")
