@@ -209,21 +209,20 @@ agenteval/
 
 Se você já tinha o projeto clonado antes do sistema de versionamento ser introduzido, faça este update manual uma única vez:
 
+**Linux / macOS / Git Bash:**
 ```bash
-# 1. Puxar as mudanças do repositório
 git pull
-
-# 2. Instalar o hook de versionamento nesta máquina
 bash setup-hooks.sh
-
-# 3. Instalar dependências atualizadas
 pip install -r backend/requirements.txt
 cd frontend && npm install && cd ..
-
-# 4. Reiniciar o backend e o frontend
 ```
 
-A partir daqui, todos os updates futuros são feitos com `bash update.sh`.
+**Windows — Prompt de Comando / duplo clique:**
+```
+update.bat
+```
+
+A partir daqui, todos os updates futuros são feitos com o script de atualização descrito abaixo.
 
 ---
 
@@ -231,26 +230,38 @@ A partir daqui, todos os updates futuros são feitos com `bash update.sh`.
 
 Execute uma única vez para instalar os git hooks locais:
 
+**Linux / macOS / Git Bash:**
 ```bash
 bash setup-hooks.sh
 ```
 
+**Windows:** os hooks são opcionais; pule esta etapa caso não use Git Bash.
+
+---
+
 ### Recebendo atualizações do repositório
 
-Execute o script de update na raiz do projeto (Git Bash no Windows):
+Escolha o script de acordo com o seu ambiente:
 
+**Linux / macOS / Git Bash:**
 ```bash
 bash update.sh
 ```
 
+**Windows:**
+```
+update.bat
+```
+
+Ou basta dar duplo clique no arquivo `update.bat` na raiz do projeto.
+
 O script:
 1. Baixa as alterações com `git pull`
-2. Reinstala os git hooks nesta máquina
-3. Instala dependências Python e Node atualizadas
-4. Exibe a versão atual
-5. Instrui a reiniciar os serviços
+2. Instala dependências Python e Node atualizadas
+3. Exibe a versão atual
+4. Instrui a reiniciar os serviços
 
-Após rodar `update.sh`, reinicie o backend e o frontend para que as mudanças entrem em vigor.
+Após rodar o script, reinicie o backend e o frontend para que as mudanças entrem em vigor.
 
 ### Aviso automático de nova versão
 

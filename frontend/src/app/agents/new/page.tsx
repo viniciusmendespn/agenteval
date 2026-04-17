@@ -205,8 +205,14 @@ export default function NewAgentPage() {
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-700">Autenticação em dois passos <span className="font-normal text-gray-400">(opcional)</span></h2>
             <button type="button" onClick={() => setUseTokenCall(v => !v)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${useTokenCall ? "bg-blue-600" : "bg-gray-200"}`}>
-              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${useTokenCall ? "translate-x-4.5" : "translate-x-0.5"}`} />
+              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${useTokenCall ? "bg-teal-500" : "bg-gray-300"}`}>
+              <span className={`inline-flex h-5 w-5 items-center justify-center transform rounded-full bg-white shadow transition-transform ${useTokenCall ? "translate-x-[22px]" : "translate-x-0.5"}`}>
+                {useTokenCall && (
+                  <svg className="h-3 w-3 text-teal-500" viewBox="0 0 12 12" fill="none">
+                    <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                )}
+              </span>
             </button>
           </div>
           {useTokenCall && (
