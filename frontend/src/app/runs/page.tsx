@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
 import { GitCompare, Plus } from "lucide-react"
+import { motion } from "framer-motion"
 import { getRuns, type TestRun } from "@/lib/api"
 import { TableSkeleton } from "@/components/Skeleton"
 
@@ -152,8 +153,14 @@ export default function RunsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((r) => (
-                <tr key={r.id} className="hover:bg-gray-50/50">
+              {filtered.map((r, i) => (
+                <motion.tr
+                  key={r.id}
+                  className="hover:bg-gray-50/50"
+                  initial={{ opacity: 0, y: 3 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.025, duration: 0.15 }}
+                >
                   <td className="px-5 py-3 text-gray-400">#{r.id}</td>
                   <td className="px-5 py-3 font-medium text-gray-800">
                     {r.agent_name ?? <span className="text-gray-400">—</span>}
@@ -183,7 +190,7 @@ export default function RunsPage() {
                       )}
                     </div>
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>

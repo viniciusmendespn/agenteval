@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
+import { motion } from "framer-motion"
 import {
   BarChart2,
   Bot,
@@ -61,6 +62,7 @@ export default function Sidebar() {
       .then(d => { if (d.version) setVersion(`v${d.version} · build ${d.build}`) })
       .catch(() => {})
   }, [])
+
   const activeHref = sections
     .flatMap(section => section.items)
     .filter(item => item.exact ? pathname === item.href : pathname.startsWith(item.href))
@@ -70,6 +72,8 @@ export default function Sidebar() {
     if (exact) return pathname === href
     return activeHref === href
   }
+
+  const settingsActive = pathname.startsWith("/settings")
 
   return (
     <aside className="flex h-full w-72 flex-col border-r border-gray-200 bg-white text-gray-900">
@@ -95,7 +99,7 @@ export default function Sidebar() {
               <p className="px-3 pb-2 text-xs font-bold uppercase text-gray-500">
                 {section.label}
               </p>
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {section.items.map((item) => {
                   const active = isActive(item.href, item.exact)
                   const Icon = item.icon
@@ -106,14 +110,18 @@ export default function Sidebar() {
                       className={cn(
                         "relative flex min-h-10 items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors",
                         active
-                          ? "bg-white text-red-700"
+                          ? "bg-red-50/60 text-red-700"
                           : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                       )}
                     >
                       {active && (
-                        <span className="absolute left-0 top-2 h-6 w-0.5 rounded-full bg-red-600" />
+                        <motion.span
+                          layoutId="sidebar-active"
+                          className="absolute left-0 top-2 h-6 w-0.5 rounded-full bg-red-600"
+                          transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                        />
                       )}
-                      <Icon className="h-4 w-4 shrink-0 text-red-600" />
+                      <Icon className={cn("h-4 w-4 shrink-0", active ? "text-red-600" : "text-gray-400")} />
                       <span className="truncate">{item.label}</span>
                     </Link>
                   )
@@ -124,20 +132,24 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      <div className="border-t border-gray-200 px-3 py-3 space-y-1">
+      <div className="border-t border-gray-200 px-3 py-3 space-y-0.5">
         <Link
           href="/settings"
           className={cn(
             "relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors",
-            pathname.startsWith("/settings")
-              ? "bg-white text-red-700"
+            settingsActive
+              ? "bg-red-50/60 text-red-700"
               : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
           )}
         >
-          {pathname.startsWith("/settings") && (
-            <span className="absolute left-0 top-2 h-6 w-0.5 rounded-full bg-red-600" />
+          {settingsActive && (
+            <motion.span
+              layoutId="sidebar-active"
+              className="absolute left-0 top-2 h-6 w-0.5 rounded-full bg-red-600"
+              transition={{ type: "spring", stiffness: 500, damping: 40 }}
+            />
           )}
-          <Settings className="h-4 w-4 shrink-0 text-red-600" />
+          <Settings className={cn("h-4 w-4 shrink-0", settingsActive ? "text-red-600" : "text-gray-400")} />
           <span className="truncate">Configurações</span>
         </Link>
         <p className="px-3 text-xs text-gray-400">{version ?? "AgentEval"}</p>

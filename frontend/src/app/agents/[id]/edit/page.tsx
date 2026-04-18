@@ -2,12 +2,16 @@
 import { useEffect, useState } from "react"
 import { useRouter, useParams } from "next/navigation"
 import { getAgent, updateAgent, testConnection, previewResponse } from "@/lib/api"
+import { showAfterNav } from "@/components/PendingToast"
+import { LoadingButton } from "@/components/ui/LoadingButton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 const PRESETS = [
   { label: "Simples",        body: `{"message": "{{message}}"}`,                                                                                                                    output: "response" },
   { label: "Com sessão",     body: `{"message": "{{message}}", "session_id": "{{sessionId}}"}`,                                                                                    output: "response" },
   { label: "OpenAI / Azure", body: `{\n  "messages": [\n    {"role": "user", "content": "{{message}}"}\n  ]\n}`,                                                                   output: "choices.0.message.content" },
   { label: "OpenAI + System",body: `{\n  "messages": [\n    {"role": "system", "content": "Você é um assistente."},\n    {"role": "user", "content": "{{message}}"}\n  ],\n  "temperature": 0.7\n}`, output: "choices.0.message.content" },
+  { label: "OpenAI + System Prompt", body: `{\n  "messages": [\n    {"role": "system", "content": "{{system_prompt}}"},\n    {"role": "user", "content": "{{message}}"}\n  ]\n}`, output: "choices.0.message.content" },
   { label: "SSE texto puro", body: `{"message": "{{message}}"}`,                                                                                                                    output: "", sse: true },
 ]
 
@@ -113,6 +117,7 @@ export default function EditAgentPage() {
         token_output_field: useTokenCall ? tokenOutputField || undefined : undefined,
         token_header_name: useTokenCall ? tokenHeaderName || undefined : undefined,
       })
+      showAfterNav("Agente atualizado")
       window.location.href = "/agents"
     } catch (e: any) { setError(e.message); setLoading(false) }
   }
@@ -121,10 +126,8 @@ export default function EditAgentPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="flex items-center gap-3 mb-6">
-        <a href="/agents" className="text-gray-400 hover:text-gray-600 text-sm">← Agentes</a>
-        <h1 className="text-2xl font-bold text-gray-900">Editar Agente</h1>
-      </div>
+      <Breadcrumb items={[{ label: "Agentes", href: "/agents" }, { label: "Editar agente" }]} />
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Editar Agente</h1>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
@@ -231,14 +234,19 @@ export default function EditAgentPage() {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className={lbl}>Body do request</label>
-              <div className="flex gap-1">{PRESETS.map(p => (
-                <button key={p.label} type="button" onClick={() => applyPreset(p)}
-                  className="text-xs px-2 py-0.5 rounded border border-gray-200 hover:bg-gray-50 text-gray-500">{p.label}</button>
-              ))}</div>
+              <select
+                className="text-xs border border-gray-200 rounded px-2 py-0.5 text-gray-500 bg-white hover:border-gray-300 focus:outline-none"
+                value=""
+                onChange={e => { const p = PRESETS.find(p => p.label === e.target.value); if (p) applyPreset(p) }}
+              >
+                <option value="">Preset...</option>
+                {PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
+              </select>
             </div>
             <p className="text-xs text-gray-400 mb-1">
-              Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code> para a mensagem e{" "}
-              <code className="bg-gray-100 px-1 rounded">{"{{sessionId}}"}</code> para manter sessão em agentes conversacionais (multi-turno).
+              Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code> para a mensagem,{" "}
+              <code className="bg-gray-100 px-1 rounded">{"{{sessionId}}"}</code> para sessão e{" "}
+              <code className="bg-gray-100 px-1 rounded">{"{{system_prompt}}"}</code> para injetar o system prompt acima.
             </p>
             <textarea className={`${inp} h-32 font-mono text-xs resize-y ${bodyError ? "border-red-400" : ""}`}
               value={requestBody} onChange={e => handleBodyChange(e.target.value)} spellCheck={false} />
@@ -293,11 +301,16 @@ export default function EditAgentPage() {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex gap-3">
-          <a href="/agents" className="flex-1 text-center py-2.5 border border-gray-300 rounded text-sm hover:bg-gray-50">Cancelar</a>
-          <button type="submit" disabled={loading || !!bodyError}
-            className="flex-1 bg-blue-600 text-white py-2.5 rounded font-medium hover:bg-blue-700 disabled:opacity-50">
-            {loading ? "Salvando..." : "Salvar alterações"}
-          </button>
+          <a href="/agents" className="flex-1 text-center flame-button-secondary">Cancelar</a>
+          <LoadingButton
+            type="submit"
+            isLoading={loading}
+            loadingText="Salvando alterações…"
+            disabled={!!bodyError}
+            className="flex-1"
+          >
+            Salvar alterações
+          </LoadingButton>
         </div>
       </form>
     </div>

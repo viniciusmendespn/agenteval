@@ -2,6 +2,9 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import { getTestCase, updateTestCase, type Turn } from "@/lib/api"
+import { showAfterNav } from "@/components/PendingToast"
+import { LoadingButton } from "@/components/ui/LoadingButton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 type TurnItem = { input: string; expected_output: string }
 type VarItem = { key: string; value: string }
@@ -103,6 +106,7 @@ export default function EditTestCasePage() {
           variables: varsDict,
         })
       }
+      showAfterNav("Caso de teste atualizado")
       window.location.href = "/test-cases"
     } catch (e: any) { setError(e.message); setLoading(false) }
   }
@@ -111,10 +115,8 @@ export default function EditTestCasePage() {
 
   return (
     <div className="max-w-xl">
-      <div className="flex items-center gap-3 mb-6">
-        <a href="/test-cases" className="text-gray-400 hover:text-gray-600 text-sm">← Casos de Teste</a>
-        <h1 className="text-2xl font-bold text-gray-900">Editar Caso de Teste</h1>
-      </div>
+      <Breadcrumb items={[{ label: "Casos de Teste", href: "/test-cases" }, { label: "Editar caso de teste" }]} />
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Editar Caso de Teste</h1>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
         <Field label="Título" required>
@@ -122,19 +124,21 @@ export default function EditTestCasePage() {
         </Field>
 
         {/* Mode toggle */}
-        <div className="flex items-center gap-2 pt-1">
-          <span className="text-sm font-medium text-gray-700 mr-1">Modo:</span>
-          <button type="button" onClick={() => setIsMultiTurn(false)}
-            className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${!isMultiTurn ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
-            Turno único
-          </button>
-          <button type="button" onClick={() => setIsMultiTurn(true)}
-            className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${isMultiTurn ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
-            Multi-turno
-          </button>
-          {isMultiTurn && (
-            <span className="text-xs text-gray-400 ml-1">O agente recebe um sessionId compartilhado em todos os turnos</span>
-          )}
+        <div className="pt-1 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium text-gray-700 mr-1">Modo:</span>
+            <button type="button" onClick={() => setIsMultiTurn(false)}
+              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${!isMultiTurn ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+              Turno único
+            </button>
+            <button type="button" onClick={() => setIsMultiTurn(true)}
+              className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${isMultiTurn ? "bg-red-600 text-white border-red-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+              Multi-turno
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 min-h-[1rem]">
+            {isMultiTurn ? "O agente recebe um sessionId compartilhado em todos os turnos." : ""}
+          </p>
         </div>
 
         {/* Single-turn */}
@@ -230,13 +234,17 @@ export default function EditTestCasePage() {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex gap-3">
-          <a href="/test-cases" className="flex-1 text-center py-2 border border-gray-300 rounded text-sm hover:bg-gray-50">
+          <a href="/test-cases" className="flex-1 text-center flame-button-secondary">
             Cancelar
           </a>
-          <button type="submit" disabled={loading}
-            className="flex-1 flame-button disabled:opacity-50">
-            {loading ? "Salvando..." : "Salvar alterações"}
-          </button>
+          <LoadingButton
+            type="submit"
+            isLoading={loading}
+            loadingText="Salvando alterações…"
+            className="flex-1"
+          >
+            Salvar alterações
+          </LoadingButton>
         </div>
       </form>
     </div>

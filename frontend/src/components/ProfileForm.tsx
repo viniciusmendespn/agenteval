@@ -2,6 +2,7 @@
 import { useState } from "react"
 import { cn } from "@/lib/cn"
 import LLMProviderSelector from "./LLMProviderSelector"
+import { LoadingButton } from "./ui/LoadingButton"
 
 export type ProfileFormData = {
   name: string
@@ -461,10 +462,14 @@ export default function ProfileForm({ initial, onSubmit, submitLabel = "Salvar p
             Cancelar
           </a>
         )}
-        <button type="submit" disabled={loading}
-          className="flame-button flex-1 disabled:opacity-50">
-          {loading ? "Salvando..." : submitLabel}
-        </button>
+        <LoadingButton
+          type="submit"
+          isLoading={loading}
+          loadingText="Salvando…"
+          className="flex-1"
+        >
+          {submitLabel}
+        </LoadingButton>
       </div>
     </form>
   )

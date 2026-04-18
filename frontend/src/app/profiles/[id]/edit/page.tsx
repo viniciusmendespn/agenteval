@@ -2,7 +2,9 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import { getProfile, updateProfile } from "@/lib/api"
+import { showAfterNav } from "@/components/PendingToast"
 import ProfileForm, { type ProfileFormData } from "@/components/ProfileForm"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 export default function EditProfilePage() {
   const { id } = useParams<{ id: string }>()
@@ -38,6 +40,7 @@ export default function EditProfilePage() {
 
   async function handleSubmit(data: ProfileFormData) {
     await updateProfile(Number(id), data)
+    showAfterNav("Perfil atualizado")
     window.location.href = "/profiles"
   }
 
@@ -45,6 +48,7 @@ export default function EditProfilePage() {
 
   return (
     <div className="max-w-xl">
+      <Breadcrumb items={[{ label: "Perfis de Avaliação", href: "/profiles" }, { label: "Editar perfil" }]} />
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Editar Perfil</h1>
       <ProfileForm initial={initial} onSubmit={handleSubmit} submitLabel="Salvar alterações" backHref="/profiles" />
     </div>

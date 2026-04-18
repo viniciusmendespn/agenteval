@@ -153,6 +153,10 @@
     background: var(--santander-red-dark);
   }
 
+  .flame-button:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
   .flame-button .lucide {
     color: #fff;
   }
@@ -183,6 +187,10 @@
     border-color: var(--santander-red);
     color: var(--santander-red);
     background: #fff;
+  }
+
+  .flame-button-secondary:active:not(:disabled) {
+    transform: scale(0.98);
   }
 
   .flame-button-secondary .lucide {
@@ -322,6 +330,16 @@
   .flame-table tbody tr:hover {
     background: #f7f8fa;
   }
+}
+
+/* Sonner — botão fechar à direita */
+[data-sonner-toast] [data-close-button] {
+  left: auto !important;
+  right: 10px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 26px !important;
+  height: 26px !important;
 }
 
 @layer utilities {

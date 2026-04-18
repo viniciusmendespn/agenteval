@@ -4,6 +4,7 @@ import {
   analyzeImport, uploadExtraFile, previewImport, confirmImport,
   type AnalyzeResult, type MappingRequest, type PreviewResult,
 } from "@/lib/api"
+import { LoadingButton } from "@/components/ui/LoadingButton"
 
 type Step = "upload" | "mapping" | "preview" | "done"
 const NONE = "__none__"
@@ -163,10 +164,11 @@ export default function ImportDatasetPage() {
             </p>
             <p className="text-xs text-gray-400 mt-1">.json · .jsonl · .json.gz · .jsonl.gz</p>
             {loading && (
-              <div className="mt-4 flex justify-center">
-                <div className="h-1 w-48 bg-gray-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-500 rounded-full animate-pulse w-full" />
+              <div className="mt-4 flex flex-col items-center gap-2">
+                <div className="h-1.5 w-56 bg-gray-200 rounded-full overflow-hidden">
+                  <div className="h-full rounded-full animate-shimmer bg-gradient-to-r from-red-200 via-red-500 to-red-200 bg-[length:200%_100%]" />
                 </div>
+                <p className="text-xs text-gray-400">Analisando estrutura do arquivo com IA…</p>
               </div>
             )}
           </div>
@@ -315,11 +317,16 @@ export default function ImportDatasetPage() {
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-3">
-            <button onClick={() => setStep("upload")} className="flex-1 py-2.5 border border-gray-300 rounded text-sm hover:bg-gray-50">Voltar</button>
-            <button onClick={handlePreview} disabled={loading || !inputPath || !datasetName.trim()}
-              className="flex-1 bg-blue-600 text-white py-2.5 rounded font-medium hover:bg-blue-700 disabled:opacity-50">
-              {loading ? "Carregando..." : "Ver preview →"}
-            </button>
+            <button onClick={() => setStep("upload")} className="flex-1 flame-button-secondary">Voltar</button>
+            <LoadingButton
+              onClick={handlePreview}
+              isLoading={loading}
+              loadingText="Gerando preview…"
+              disabled={!inputPath || !datasetName.trim()}
+              className="flex-1"
+            >
+              Ver preview →
+            </LoadingButton>
           </div>
         </div>
       )}
@@ -348,11 +355,15 @@ export default function ImportDatasetPage() {
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-3">
-            <button onClick={() => setStep("mapping")} className="flex-1 py-2.5 border border-gray-300 rounded text-sm hover:bg-gray-50">Ajustar mapeamento</button>
-            <button onClick={handleConfirm} disabled={loading}
-              className="flex-1 bg-green-600 text-white py-2.5 rounded font-medium hover:bg-green-700 disabled:opacity-50">
-              {loading ? "Importando..." : `Criar dataset com ${preview.record_count.toLocaleString()} registros`}
-            </button>
+            <button onClick={() => setStep("mapping")} className="flex-1 flame-button-secondary">Ajustar mapeamento</button>
+            <LoadingButton
+              onClick={handleConfirm}
+              isLoading={loading}
+              loadingText="Importando dataset…"
+              className="flex-1"
+            >
+              {`Criar dataset com ${preview.record_count.toLocaleString()} registros`}
+            </LoadingButton>
           </div>
         </div>
       )}
@@ -365,12 +376,11 @@ export default function ImportDatasetPage() {
           <p className="text-sm text-gray-500">Agora você pode avaliá-lo com um perfil de métricas.</p>
           <div className="flex gap-3 justify-center mt-2">
             {createdDatasetId && (
-              <a href={`/datasets/${createdDatasetId}/evaluate`}
-                className="bg-blue-600 text-white px-5 py-2.5 rounded font-medium hover:bg-blue-700 text-sm">
+              <a href={`/datasets/${createdDatasetId}/evaluate`} className="flame-button">
                 Avaliar agora
               </a>
             )}
-            <a href="/datasets" className="border border-gray-300 px-5 py-2.5 rounded text-sm hover:bg-gray-50">
+            <a href="/datasets" className="flame-button-secondary">
               Ver datasets
             </a>
           </div>

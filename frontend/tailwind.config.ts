@@ -48,6 +48,25 @@ const config: Config = {
       boxShadow: {
         santander: "0 10px 30px rgba(17, 24, 32, 0.08)",
       },
+      keyframes: {
+        shimmer: {
+          "0%": { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
+        "fade-in": {
+          from: { opacity: "0", transform: "translateY(6px)" },
+          to: { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-in": {
+          from: { opacity: "0", transform: "translateX(-8px)" },
+          to: { opacity: "1", transform: "translateX(0)" },
+        },
+      },
+      animation: {
+        shimmer: "shimmer 1.6s linear infinite",
+        "fade-in": "fade-in 0.18s ease-out both",
+        "slide-in": "slide-in 0.15s ease-out both",
+      },
     },
   },
   plugins: [require("@tailwindcss/typography")],

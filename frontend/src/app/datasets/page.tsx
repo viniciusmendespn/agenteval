@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Database, Upload } from "lucide-react"
+import { motion } from "framer-motion"
 import { getDatasets, type Dataset } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { ListSkeleton } from "@/components/Skeleton"
@@ -47,8 +48,14 @@ export default function DatasetsPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {datasets.map((ds) => (
-            <div key={ds.id} className="flame-panel p-4">
+          {datasets.map((ds, i) => (
+            <motion.div
+              key={ds.id}
+              className="flame-panel p-4"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04, duration: 0.15 }}
+            >
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
                   <Link href={`/datasets/${ds.id}`} className="font-semibold text-gray-900 hover:text-red-700">
@@ -69,10 +76,10 @@ export default function DatasetsPage() {
                   <Link href={`/datasets/${ds.id}`} className="flame-link-action">
                     Ver registros
                   </Link>
-                  <DeleteButton id={ds.id} path="/datasets" />
+                  <DeleteButton id={ds.id} path="/datasets" onDeleted={() => setDatasets(prev => prev.filter(x => x.id !== ds.id))} />
                 </div>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}

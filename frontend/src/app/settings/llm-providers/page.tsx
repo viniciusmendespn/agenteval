@@ -1,14 +1,18 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Bot, Plus, Pencil, Trash2, Check, X } from "lucide-react"
+import { Bot, Plus, Pencil, Trash2, Check, X, Zap, Loader2, ChevronDown } from "lucide-react"
 import {
   getLLMProviders,
   createLLMProvider,
   updateLLMProvider,
   deleteLLMProvider,
+  testLLMProvider,
   type LLMProvider,
 } from "@/lib/api"
+import { toast } from "sonner"
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
+import { LoadingButton } from "@/components/ui/LoadingButton"
 
 type FormData = Omit<LLMProvider, "id" | "created_at">
 
@@ -29,6 +33,10 @@ export default function LLMProvidersPage() {
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editForm, setEditForm] = useState<FormData>(EMPTY)
+  const [testingId, setTestingId] = useState<number | null>(null)
+  const [testResults, setTestResults] = useState<Record<number, { ok: boolean; msg: string }>>({})
+  const [formOpen, setFormOpen] = useState(false)
+
 
   function load() {
     setLoading(true)
@@ -47,8 +55,10 @@ export default function LLMProvidersPage() {
         api_version: form.api_version || undefined,
       })
       setForm(EMPTY)
+      setFormOpen(false)
+      toast.success("Provedor adicionado")
       load()
-    } catch (e: any) { setError(e.message) }
+    } catch (e: any) { setError(e.message); toast.error("Erro ao adicionar provedor") }
     finally { setSaving(false) }
   }
 
@@ -66,15 +76,37 @@ export default function LLMProvidersPage() {
         api_version: editForm.api_version || undefined,
       })
       setEditingId(null)
+      toast.success("Provedor atualizado")
       load()
-    } catch (e: any) { setError(e.message) }
+    } catch (e: any) { setError(e.message); toast.error("Erro ao atualizar provedor") }
     finally { setSaving(false) }
   }
 
   async function handleDelete(id: number) {
-    if (!confirm("Remover este provedor?")) return
-    await deleteLLMProvider(id).catch(() => {})
+    try {
+      await deleteLLMProvider(id)
+      toast.success("Provedor removido")
+    } catch { toast.error("Erro ao remover provedor") }
     load()
+  }
+
+  async function handleTest(id: number) {
+    setTestingId(id)
+    setTestResults(r => ({ ...r, [id]: undefined as any }))
+    try {
+      const res = await testLLMProvider(id)
+      setTestResults(r => ({
+        ...r,
+        [id]: { ok: res.ok, msg: res.ok ? `OK — ${res.reply ?? res.model}` : (res.error ?? "Falha") },
+      }))
+      if (res.ok) toast.success("Conexão OK")
+      else toast.error(res.error ?? "Falha na conexão")
+    } catch (e: any) {
+      setTestResults(r => ({ ...r, [id]: { ok: false, msg: e.message } }))
+      toast.error("Erro ao testar provedor")
+    } finally {
+      setTestingId(null)
+    }
   }
 
   const inp = "w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
@@ -91,18 +123,22 @@ export default function LLMProvidersPage() {
       )}
 
       {/* Formulário de criação */}
-      <section className="flame-panel p-5">
-        <div className="flex items-start justify-between gap-4 mb-5">
+      <section className="flame-panel">
+        <button type="button" onClick={() => setFormOpen(o => !o)}
+          className="flex w-full items-start justify-between gap-4 p-5 text-left">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Novo provedor</h2>
             <p className="text-sm text-gray-500 mt-1">Adicione um endpoint de LLM para usar como juiz em perfis de avaliação.</p>
           </div>
-          <div className="flame-icon-shell h-10 w-10">
-            <Plus className="h-5 w-5 text-red-600" />
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flame-icon-shell h-10 w-10">
+              <Plus className="h-5 w-5 text-red-600" />
+            </div>
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${formOpen ? "rotate-180" : ""}`} />
           </div>
-        </div>
+        </button>
 
-        <form onSubmit={handleCreate} className="space-y-3">
+        {formOpen && <form onSubmit={handleCreate} className="px-5 pb-5 space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className={lbl}>Nome *</label>
@@ -143,12 +179,16 @@ export default function LLMProvidersPage() {
             )}
           </div>
           <div className="flex justify-end">
-            <button type="submit" disabled={saving || !form.name || !form.api_key || !form.model_name}
-              className="flame-button disabled:opacity-50">
-              {saving ? "Adicionando..." : "Adicionar provedor"}
-            </button>
+            <LoadingButton
+              type="submit"
+              isLoading={saving}
+              loadingText="Adicionando…"
+              disabled={!form.name || !form.api_key || !form.model_name}
+            >
+              Adicionar provedor
+            </LoadingButton>
           </div>
-        </form>
+        </form>}
       </section>
 
       {/* Lista de provedores */}
@@ -234,17 +274,34 @@ export default function LLMProvidersPage() {
                           {p.model_name} · <span className="flame-chip">{p.provider_type}</span>
                           {p.base_url && <> · {p.base_url}</>}
                         </p>
+                        {testResults[p.id] && (
+                          <p className={`text-xs mt-0.5 truncate ${testResults[p.id].ok ? "text-green-600" : "text-red-600"}`}>
+                            {testResults[p.id].ok ? "✓" : "✗"} {testResults[p.id].msg}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <button onClick={() => startEdit(p)}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm font-bold text-gray-600 hover:border-red-600 hover:text-red-700 flex items-center gap-1.5">
+                      <button onClick={() => handleTest(p.id)} disabled={testingId === p.id}
+                        className="flame-button-secondary flex items-center gap-1.5 disabled:opacity-50">
+                        {testingId === p.id
+                          ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Testando...</>
+                          : <><Zap className="h-3.5 w-3.5" /> Testar</>}
+                      </button>
+                      <button onClick={() => startEdit(p)} className="flame-button-secondary flex items-center gap-1.5">
                         <Pencil className="h-3.5 w-3.5" /> Editar
                       </button>
-                      <button onClick={() => handleDelete(p.id)}
-                        className="rounded-md border border-gray-300 px-3 py-2 text-sm font-bold text-gray-600 hover:border-red-600 hover:text-red-700 flex items-center gap-1.5">
-                        <Trash2 className="h-3.5 w-3.5" /> Remover
-                      </button>
+                      <ConfirmDialog
+                        title="Remover provedor?"
+                        description="Este provedor será removido. Perfis que o utilizavam voltarão ao provedor padrão."
+                        confirmText="Remover provedor"
+                        onConfirm={() => handleDelete(p.id)}
+                        trigger={
+                          <button className="flame-button-secondary flex cursor-pointer items-center gap-1.5">
+                            <Trash2 className="h-3.5 w-3.5" /> Remover
+                          </button>
+                        }
+                      />
                     </div>
                   </div>
                 )}

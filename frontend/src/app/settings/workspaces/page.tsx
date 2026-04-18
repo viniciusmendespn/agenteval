@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Briefcase, Plus, RefreshCw } from "lucide-react"
+import { Briefcase, Plus, RefreshCw, ChevronDown } from "lucide-react"
+import { toast } from "sonner"
 import {
   createWorkspace,
   getActiveWorkspaceId,
@@ -10,6 +11,7 @@ import {
   type Workspace,
 } from "@/lib/api"
 import { WorkspaceListSkeleton } from "@/components/Skeleton"
+import { LoadingButton } from "@/components/ui/LoadingButton"
 
 export default function WorkspaceSettingsPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -19,6 +21,7 @@ export default function WorkspaceSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
 
   function load() {
     setLoading(true)
@@ -47,10 +50,13 @@ export default function WorkspaceSettingsPage() {
       setActiveWorkspaceId(workspace.id)
       setName("")
       setSlug("")
+      setOpen(false)
+      toast.success("Workspace criado")
       await getWorkspaces().then(items => setWorkspaces(items.filter(item => item.slug !== "default")))
       setActiveId(String(workspace.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar workspace")
+      toast.error("Erro ao criar workspace")
     } finally {
       setSaving(false)
     }
@@ -71,20 +77,24 @@ export default function WorkspaceSettingsPage() {
         </div>
       )}
 
-      <section className="flame-panel p-5">
-        <div className="flex items-start justify-between gap-4">
+      <section className="flame-panel">
+        <button type="button" onClick={() => setOpen(o => !o)}
+          className="flex w-full items-start justify-between gap-4 p-5 text-left">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Novo workspace</h2>
             <p className="text-sm text-gray-500 mt-1">
               Crie um projeto isolado para manter dados e execuções separados.
             </p>
           </div>
-          <div className="flame-icon-shell h-10 w-10">
-            <Plus className="h-5 w-5 text-red-600" />
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="flame-icon-shell h-10 w-10">
+              <Plus className="h-5 w-5 text-red-600" />
+            </div>
+            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
           </div>
-        </div>
+        </button>
 
-        <form onSubmit={submit} className="mt-5 grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
+        {open && <form onSubmit={submit} className="px-5 pb-5 grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3 items-end">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Nome</label>
             <input
@@ -104,14 +114,15 @@ export default function WorkspaceSettingsPage() {
               placeholder="atendimento-digital"
             />
           </div>
-          <button
+          <LoadingButton
             type="submit"
-            disabled={saving || !name.trim()}
-            className="flame-button h-11 disabled:opacity-50"
+            isLoading={saving}
+            loadingText="Criando workspace…"
+            disabled={!name.trim()}
           >
-            {saving ? "Criando..." : "Criar workspace"}
-          </button>
-        </form>
+            Criar workspace
+          </LoadingButton>
+        </form>}
       </section>
 
       <section className="flame-panel overflow-hidden">
@@ -154,8 +165,8 @@ export default function WorkspaceSettingsPage() {
                     onClick={() => activate(workspace)}
                     disabled={active}
                     className={active
-                      ? "rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700"
-                      : "rounded-md border border-gray-300 px-3 py-2 text-sm font-bold text-gray-600 hover:border-red-600 hover:text-red-700"}
+                      ? "flame-button opacity-60 cursor-default"
+                      : "flame-button-secondary"}
                   >
                     {active ? "Ativo" : "Ativar"}
                   </button>

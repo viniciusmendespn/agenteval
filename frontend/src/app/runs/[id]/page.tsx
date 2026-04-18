@@ -5,8 +5,10 @@ import { getRun, getTestCases, getProfile, getRunBreakdown, cancelRun,
   type TestRun, type TestCase, type EvaluationProfile, type RunBreakdown } from "@/lib/api"
 import { getMetricInfo, normalizeScore, scoreColorClasses } from "@/lib/metrics"
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from "recharts"
-import { Filter, ChevronLeft } from "lucide-react"
+import { Filter, ChevronLeft, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { cn } from "@/lib/cn"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 function ScoreCircle({ score }: { score?: number | null }) {
   if (score == null) return <span className="text-gray-400 text-3xl font-bold">—</span>
@@ -180,9 +182,7 @@ export default function RunPage() {
 
   return (
     <div className="space-y-5">
-      <a href="/runs" className="text-gray-400 hover:text-gray-600 text-sm flex items-center gap-1">
-        <ChevronLeft className="w-4 h-4" /> Execuções
-      </a>
+      <Breadcrumb items={[{ label: "Execuções", href: "/runs" }, { label: `Execução #${run.id}` }]} />
 
       {/* Header */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-6">
@@ -198,9 +198,15 @@ export default function RunPage() {
               : `${passed} aprovados · ${total - passed} reprovados · ${total} total`}
           </p>
           {isRunning && (
-            <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden w-48">
-              <div className="h-full bg-blue-500 rounded-full transition-all duration-500"
-                style={{ width: `${total > 0 ? (done / total) * 100 : 0}%` }} />
+            <div className="mt-2 flex items-center gap-3 w-full max-w-xs">
+              <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-700 ease-out"
+                  style={{
+                    width: `${total > 0 ? (done / total) * 100 : 0}%`,
+                    background: "var(--santander-red)",
+                  }} />
+              </div>
+              <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-red-500" />
             </div>
           )}
         </div>
@@ -213,7 +219,10 @@ export default function RunPage() {
                   onClick={async () => {
                     setCancelling(true)
                     setConfirmCancel(false)
-                    try { await cancelRun(run.id) } catch {}
+                    try {
+                      await cancelRun(run.id)
+                      toast.success("Execução cancelada")
+                    } catch { toast.error("Erro ao cancelar execução") }
                     finally { setCancelling(false) }
                   }}
                   disabled={cancelling}

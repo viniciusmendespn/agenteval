@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
 import { FlaskConical, Plus, Search } from "lucide-react"
+import { motion } from "framer-motion"
 import { getTestCases, type TestCase } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { ListSkeleton } from "@/components/Skeleton"
@@ -70,8 +71,14 @@ export default function TestCasesPage() {
         </div>
       ) : (
         <div className="space-y-3">
-          {filtered.map((tc) => (
-            <div key={tc.id} className="flame-panel flex items-start justify-between gap-4 p-4">
+          {filtered.map((tc, i) => (
+            <motion.div
+              key={tc.id}
+              className="flame-panel flex items-start justify-between gap-4 p-4"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.03, duration: 0.15 }}
+            >
               <div className="min-w-0 flex-1">
                 <p className="font-semibold text-gray-900">{tc.title}</p>
                 <p className="mt-1 line-clamp-2 text-sm text-gray-500">{tc.input}</p>
@@ -96,9 +103,9 @@ export default function TestCasesPage() {
                 <Link href={`/test-cases/${tc.id}/edit`} className="flame-link-action">
                   Editar
                 </Link>
-                <DeleteButton id={tc.id} path="/test-cases" />
+                <DeleteButton id={tc.id} path="/test-cases" onDeleted={() => setCases(prev => prev.filter(c => c.id !== tc.id))} />
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
       )}

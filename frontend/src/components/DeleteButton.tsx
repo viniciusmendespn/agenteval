@@ -1,55 +1,69 @@
 "use client"
-import { useState } from "react"
+
 import { useRouter } from "next/navigation"
 import { API, workspaceHeaders } from "@/lib/api"
+import { toastError } from "@/lib/toast"
+import { toast } from "sonner"
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
+import { Trash2 } from "lucide-react"
+
+const LABELS: Record<string, string> = {
+  "/agents": "Agente",
+  "/test-cases": "Caso de teste",
+  "/datasets": "Dataset",
+  "/profiles": "Perfil de avaliação",
+  "/runs": "Execução",
+}
 
 interface Props {
   id: number
-  path: string  // ex: "/agents"
+  path: string
+  onDeleted?: () => void
 }
 
-export default function DeleteButton({ id, path }: Props) {
+export default function DeleteButton({ id, path, onDeleted }: Props) {
   const router = useRouter()
-  const [confirming, setConfirming] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const label = LABELS[path] || "Item"
 
   async function handleDelete() {
-    setLoading(true)
+    let undone = false
+
+    const toastId = toast.success(`${label} excluído`, {
+      duration: 5000,
+      action: {
+        label: "Desfazer",
+        onClick: () => { undone = true },
+      },
+    })
+
+    await new Promise(r => setTimeout(r, 5000))
+
+    if (undone) {
+      toast.dismiss(toastId)
+      return
+    }
+
     try {
       await fetch(`${API}${path}/${id}`, { method: "DELETE", headers: workspaceHeaders(false) })
-      router.refresh()
-    } finally {
-      setLoading(false)
-      setConfirming(false)
+      if (onDeleted) onDeleted()
+      else router.refresh()
+    } catch {
+      toastError("Erro ao excluir. Tente novamente.")
     }
   }
 
-  if (confirming) {
-    return (
-      <span className="flex items-center gap-1">
-        <button
-          onClick={handleDelete}
-          disabled={loading}
-          className="text-xs text-white bg-red-500 hover:bg-red-600 px-2 py-0.5 rounded disabled:opacity-50"
-        >
-          {loading ? "..." : "Confirmar"}
-        </button>
-        <button
-          onClick={() => setConfirming(false)}
-          className="text-xs text-gray-400 hover:text-gray-600 px-1"
-        >
-          Cancelar
-        </button>
-      </span>
-    )
-  }
-
   return (
-    <button
-      onClick={() => setConfirming(true)}
-      className="text-xs text-gray-400 hover:text-red-500 transition-colors"
-    >
-      Excluir
-    </button>
+    <ConfirmDialog
+      title={`Excluir ${label.toLowerCase()}?`}
+      description="Esta ação não pode ser desfeita. O item será removido permanentemente."
+      confirmText={`Excluir ${label.toLowerCase()}`}
+      onConfirm={handleDelete}
+      trigger={
+        <button className="cursor-pointer text-xs text-gray-400 hover:text-red-500 transition-colors flex items-center gap-1">
+          <Trash2 className="h-3 w-3" />
+          Excluir
+        </button>
+      }
+    />
   )
 }

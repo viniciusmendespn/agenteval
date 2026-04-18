@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Bot, Plus, Sparkles } from "lucide-react"
+import { motion } from "framer-motion"
 import { getAgents, type Agent } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { TableSkeleton } from "@/components/Skeleton"
@@ -25,10 +26,7 @@ export default function AgentsPage() {
           <h1 className="text-2xl font-bold text-gray-900">Agentes</h1>
           <p className="mt-1 text-sm text-gray-500">Endpoints e modelos disponíveis neste workspace.</p>
         </div>
-        <Link
-          href="/agents/new"
-          className="flame-button"
-        >
+        <Link href="/agents/new" className="flame-button">
           <Plus className="h-4 w-4" />
           Novo agente
         </Link>
@@ -37,12 +35,15 @@ export default function AgentsPage() {
       {loading ? (
         <TableSkeleton columns={6} rows={6} />
       ) : agents.length === 0 ? (
-        <div className="flame-empty">
+        <motion.div className="flame-empty" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
           <div className="flame-icon-shell mx-auto mb-3 h-10 w-10">
             <Bot className="h-5 w-5 text-red-600" />
           </div>
           <p className="text-sm font-semibold text-gray-700">Nenhum agente cadastrado ainda.</p>
-        </div>
+          <Link href="/agents/new" className="flame-link mt-3 inline-block text-sm">
+            Criar primeiro agente
+          </Link>
+        </motion.div>
       ) : (
         <div className="flame-panel overflow-hidden">
           <table className="flame-table">
@@ -57,8 +58,14 @@ export default function AgentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {agents.map((a) => (
-                <tr key={a.id} className="hover:bg-gray-50">
+              {agents.map((a, i) => (
+                <motion.tr
+                  key={a.id}
+                  className="hover:bg-gray-50"
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.03, duration: 0.15 }}
+                >
                   <td className="px-4 py-3 font-medium text-gray-900">{a.name || <span className="text-gray-400 italic">sem nome</span>}</td>
                   <td className="px-4 py-3">
                     <span className="flame-chip">
@@ -85,10 +92,10 @@ export default function AgentsPage() {
                       <Link href={`/agents/${a.id}/edit`} className="flame-link-action">
                         Editar
                       </Link>
-                      <DeleteButton id={a.id} path="/agents" />
+                      <DeleteButton id={a.id} path="/agents" onDeleted={() => setAgents(prev => prev.filter(x => x.id !== a.id))} />
                     </div>
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>

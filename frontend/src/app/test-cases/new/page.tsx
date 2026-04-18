@@ -1,6 +1,9 @@
 "use client"
 import { useState } from "react"
 import { createTestCase, type Turn } from "@/lib/api"
+import { showAfterNav } from "@/components/PendingToast"
+import { LoadingButton } from "@/components/ui/LoadingButton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 type TurnItem = { input: string; expected_output: string }
 type VarItem = { key: string; value: string }
@@ -81,6 +84,7 @@ export default function NewTestCasePage() {
           variables: varsDict,
         })
       }
+      showAfterNav("Caso de teste criado")
       window.location.href = "/test-cases"
     } catch (e: any) {
       setError(e.message)
@@ -91,6 +95,7 @@ export default function NewTestCasePage() {
 
   return (
     <div className="max-w-xl">
+      <Breadcrumb items={[{ label: "Casos de Teste", href: "/test-cases" }, { label: "Novo caso de teste" }]} />
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Novo Caso de Teste</h1>
       <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-6 space-y-4">
         <Field label="Título" required>
@@ -110,9 +115,9 @@ export default function NewTestCasePage() {
               Multi-turno
             </button>
           </div>
-          {isMultiTurn && (
-            <p className="text-xs text-gray-400">O agente recebe um sessionId compartilhado em todos os turnos.</p>
-          )}
+          <p className="text-xs text-gray-400 min-h-[1rem]">
+            {isMultiTurn ? "O agente recebe um sessionId compartilhado em todos os turnos." : ""}
+          </p>
         </div>
 
         {/* Single-turn */}
@@ -207,10 +212,14 @@ export default function NewTestCasePage() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button type="submit" disabled={loading}
-          className="w-full flame-button disabled:opacity-50">
-          {loading ? "Salvando..." : "Salvar caso de teste"}
-        </button>
+        <LoadingButton
+          type="submit"
+          isLoading={loading}
+          loadingText="Salvando caso de teste…"
+          className="w-full"
+        >
+          Salvar caso de teste
+        </LoadingButton>
       </form>
     </div>
   )
