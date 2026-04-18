@@ -12,6 +12,7 @@ import {
 } from "@/lib/api"
 import { WorkspaceListSkeleton } from "@/components/Skeleton"
 import { LoadingButton } from "@/components/ui/LoadingButton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 export default function WorkspaceSettingsPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -71,6 +72,7 @@ export default function WorkspaceSettingsPage() {
 
   return (
     <div className="max-w-5xl space-y-6">
+      <Breadcrumb items={[{ label: "Configurações", href: "/settings" }, { label: "Workspaces" }]} />
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}

@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Upload, Trash2, ChevronDown, ChevronUp, Save } from "lucide-react"
 import { getDataset, updateDataset, bulkDeleteRecords, type DatasetDetail, type DatasetRecord } from "@/lib/api"
 import AppendDatasetModal from "@/components/AppendDatasetModal"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 // Two subtle background tints that alternate between sessions
 const SESSION_TINTS = ["bg-blue-50/30", "bg-amber-50/30"]
@@ -107,7 +108,7 @@ export default function DatasetPage() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <a href="/datasets" className="text-gray-400 hover:text-gray-600 text-sm">← Datasets</a>
+          <Breadcrumb items={[{ label: "Datasets", href: "/datasets" }, { label: ds.name }]} />
           <h1 className="text-2xl font-bold text-gray-900 mt-1">{ds.name}</h1>
           {ds.description && <p className="text-sm text-gray-500 mt-0.5">{ds.description}</p>}
           <p className="text-xs text-gray-400 mt-1">{ds.records.length.toLocaleString()} registros</p>

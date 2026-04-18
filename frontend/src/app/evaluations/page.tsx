@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { getAllDatasetEvaluations, type DatasetEvaluationSummary } from "@/lib/api"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 const statusColor: Record<string, string> = {
   completed: "bg-green-100 text-green-700",
@@ -38,6 +39,7 @@ export default function EvaluationsPage() {
 
   return (
     <div>
+      <Breadcrumb items={[{ label: "Avaliações de Dataset" }]} />
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Avaliações de Dataset</h1>

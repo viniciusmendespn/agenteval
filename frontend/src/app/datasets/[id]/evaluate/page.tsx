@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { useParams } from "next/navigation"
 import { getDataset, getProfiles, createDatasetEvaluation, type DatasetDetail, type EvaluationProfile } from "@/lib/api"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 export default function EvaluateDatasetPage() {
   const { id } = useParams<{ id: string }>()
@@ -33,9 +34,11 @@ export default function EvaluateDatasetPage() {
 
   return (
     <div className="max-w-xl">
-      <div className="mb-6">
-        <a href={`/datasets/${id}`} className="text-gray-400 hover:text-gray-600 text-sm">← {ds.name}</a>
-      </div>
+      <Breadcrumb items={[
+        { label: "Datasets", href: "/datasets" },
+        { label: ds.name, href: `/datasets/${id}` },
+        { label: "Avaliar Dataset" },
+      ]} />
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Avaliar Dataset</h1>
       <p className="text-sm text-gray-500 mb-6">
         As respostas já existentes no dataset serão avaliadas pelas métricas do perfil selecionado.

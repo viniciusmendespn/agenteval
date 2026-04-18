@@ -6,6 +6,7 @@ import { GitCompare, Plus } from "lucide-react"
 import { motion } from "framer-motion"
 import { getRuns, type TestRun } from "@/lib/api"
 import { TableSkeleton } from "@/components/Skeleton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 const statusColor: Record<string, string> = {
   completed: "bg-green-100 text-green-700",
@@ -61,6 +62,7 @@ export default function RunsPage() {
 
   return (
     <div>
+      <Breadcrumb items={[{ label: "Execuções" }]} />
       <div className="flame-page-header">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Execuções</h1>

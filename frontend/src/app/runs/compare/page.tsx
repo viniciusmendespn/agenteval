@@ -2,8 +2,9 @@
 import { useEffect, useState, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { getRuns, compareRuns, type TestRun, type RunComparison } from "@/lib/api"
-import { TrendingUp, TrendingDown, Minus, ChevronLeft } from "lucide-react"
+import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { cn } from "@/lib/cn"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 const METRIC_LABELS: Record<string, string> = {
   relevancy: "Relevância",
@@ -72,11 +73,7 @@ function CompareContent() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-2">
-        <a href="/runs" className="text-gray-400 hover:text-gray-600 text-sm flex items-center gap-1">
-          <ChevronLeft className="w-4 h-4" /> Execuções
-        </a>
-      </div>
+      <Breadcrumb items={[{ label: "Execuções", href: "/runs" }, { label: "Comparar Execuções" }]} />
 
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Comparar Execuções</h1>

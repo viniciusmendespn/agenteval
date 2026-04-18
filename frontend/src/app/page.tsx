@@ -7,6 +7,7 @@ import {
 import { Bot, FlaskConical, Play, Database, TrendingUp, TrendingDown, Minus, RefreshCw } from "lucide-react"
 import { getAnalyticsOverview, type AnalyticsOverview } from "@/lib/api"
 import { Skeleton, TableSkeleton } from "@/components/Skeleton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 function KpiCard({
   icon: Icon,
@@ -151,6 +152,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Dashboard" }]} />
       <div className="flame-page-header">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>

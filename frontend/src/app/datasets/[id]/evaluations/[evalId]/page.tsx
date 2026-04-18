@@ -4,6 +4,7 @@ import { useParams } from "next/navigation"
 import { getDatasetEvaluation, getDataset,
   type DatasetEvaluation, type DatasetDetail } from "@/lib/api"
 import { getMetricInfo, scoreColorClasses, normalizeScore } from "@/lib/metrics"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 function ScoreCircle({ score }: { score?: number | null }) {
   if (score == null) return <span className="text-gray-400 text-3xl font-bold">—</span>
@@ -76,9 +77,11 @@ export default function DatasetEvaluationPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <a href={`/datasets/${id}`} className="text-gray-400 hover:text-gray-600 text-sm">← {ds.name}</a>
-      </div>
+      <Breadcrumb items={[
+        { label: "Datasets", href: "/datasets" },
+        { label: ds.name, href: `/datasets/${id}` },
+        { label: `Avaliação #${evalId}` },
+      ]} />
 
       <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6 flex items-center gap-6">
         <ScoreCircle score={isRunning ? null : ev.overall_score} />

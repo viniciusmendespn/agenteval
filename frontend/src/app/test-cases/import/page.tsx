@@ -9,6 +9,7 @@ import {
   type MappingRequest,
   type PreviewResult,
 } from "@/lib/api"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 type Step = "upload" | "mapping" | "preview" | "done"
 
@@ -159,9 +160,7 @@ export default function ImportPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-6">
-        <a href="/test-cases" className="text-gray-400 hover:text-gray-600 text-sm">← Casos de Teste</a>
-      </div>
+      <Breadcrumb items={[{ label: "Casos de Teste", href: "/test-cases" }, { label: "Importar Casos de Teste" }]} />
       <h1 className="text-2xl font-bold text-gray-900 mb-2">Importar Dataset</h1>
       <p className="text-sm text-gray-500 mb-6">
         Suba um arquivo e a IA identificará automaticamente os campos. Depois você pode

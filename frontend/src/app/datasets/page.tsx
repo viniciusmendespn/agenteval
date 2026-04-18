@@ -7,6 +7,7 @@ import { motion } from "framer-motion"
 import { getDatasets, type Dataset } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { ListSkeleton } from "@/components/Skeleton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 export default function DatasetsPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([])
@@ -21,6 +22,7 @@ export default function DatasetsPage() {
 
   return (
     <div>
+      <Breadcrumb items={[{ label: "Datasets" }]} />
       <div className="flame-page-header">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Datasets</h1>

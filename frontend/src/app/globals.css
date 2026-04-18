@@ -332,14 +332,28 @@
   }
 }
 
-/* Sonner — botão fechar à direita */
+/* Sonner — botão fechar à direita, sem círculo */
 [data-sonner-toast] [data-close-button] {
   left: auto !important;
   right: 10px !important;
   top: 50% !important;
   transform: translateY(-50%) !important;
-  width: 26px !important;
-  height: 26px !important;
+  width: 24px !important;
+  height: 24px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 0.45;
+  transition: opacity 150ms ease;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  opacity: 1;
+}
+
+[data-sonner-toast] [data-close-button] svg {
+  width: 16px !important;
+  height: 16px !important;
 }
 
 @layer utilities {

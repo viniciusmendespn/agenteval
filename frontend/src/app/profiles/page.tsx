@@ -7,6 +7,7 @@ import { motion } from "framer-motion"
 import { getProfiles, type EvaluationProfile } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { ListSkeleton } from "@/components/Skeleton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 export default function ProfilesPage() {
   const [profiles, setProfiles] = useState<EvaluationProfile[]>([])
@@ -21,6 +22,7 @@ export default function ProfilesPage() {
 
   return (
     <div>
+      <Breadcrumb items={[{ label: "Perfis de Avaliação" }]} />
       <div className="flame-page-header">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Perfis de Avaliação</h1>

@@ -10,6 +10,7 @@ import {
   CartesianGrid, Legend,
 } from "recharts"
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 const CHART_COLORS = [
   "#ec0000", "#10b981", "#f59e0b", "#6b7280", "#8b5cf6",
@@ -108,6 +109,7 @@ export default function EvolutionPage() {
 
   return (
     <div className="space-y-6">
+      <Breadcrumb items={[{ label: "Evolução" }]} />
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Evolução</h1>
         <p className="text-sm text-gray-500 mt-1">

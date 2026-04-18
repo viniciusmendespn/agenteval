@@ -7,6 +7,7 @@ import { motion } from "framer-motion"
 import { getAgents, type Agent } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { TableSkeleton } from "@/components/Skeleton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -21,6 +22,7 @@ export default function AgentsPage() {
 
   return (
     <div>
+      <Breadcrumb items={[{ label: "Agentes" }]} />
       <div className="flame-page-header">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Agentes</h1>

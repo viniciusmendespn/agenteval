@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
 import { LoadingButton } from "@/components/ui/LoadingButton"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 type FormData = Omit<LLMProvider, "id" | "created_at">
 
@@ -114,6 +115,7 @@ export default function LLMProvidersPage() {
 
   return (
     <div className="max-w-5xl space-y-6">
+      <Breadcrumb items={[{ label: "Configurações", href: "/settings" }, { label: "Provedores LLM" }]} />
       <p className="text-sm text-gray-500">Configure LLMs alternativos para usar como juiz nas avaliações. O provedor padrão vem das variáveis de ambiente.</p>
 
       {error && (

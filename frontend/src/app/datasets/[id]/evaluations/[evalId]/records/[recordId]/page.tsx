@@ -4,8 +4,8 @@ import { useParams } from "next/navigation"
 import { getDatasetEvaluation, getDataset, getProfile,
   type DatasetResult, type DatasetRecord, type EvaluationProfile } from "@/lib/api"
 import { getMetricInfo, normalizeScore, scoreColorClasses } from "@/lib/metrics"
-import { ChevronLeft } from "lucide-react"
 import ConversationThread from "@/components/ConversationThread"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 export default function RecordDetailPage() {
   const { id, evalId, recordId } = useParams<{ id: string; evalId: string; recordId: string }>()
@@ -41,11 +41,11 @@ export default function RecordDetailPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
-      {/* Breadcrumb */}
-      <a href={`/datasets/${id}/evaluations/${evalId}`}
-        className="text-gray-400 hover:text-gray-600 text-sm flex items-center gap-1">
-        <ChevronLeft className="w-4 h-4" /> Avaliação #{evalId}
-      </a>
+      <Breadcrumb items={[
+        { label: "Datasets", href: "/datasets" },
+        { label: `Avaliação #${evalId}`, href: `/datasets/${id}/evaluations/${evalId}` },
+        { label: `Registro #${recordId}` },
+      ]} />
 
       {/* Status */}
       <div className="flex items-center gap-3 flex-wrap">

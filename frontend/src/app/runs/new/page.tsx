@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { getAgents, getProfiles, getTestCases, createRun, type Agent, type EvaluationProfile, type TestCase } from "@/lib/api"
+import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 export default function NewRunPage() {
   const searchParams = useSearchParams()
@@ -70,9 +71,7 @@ export default function NewRunPage() {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-6">
-        <a href="/runs" className="text-gray-400 hover:text-gray-600 text-sm">← Execuções</a>
-      </div>
+      <Breadcrumb items={[{ label: "Execuções", href: "/runs" }, { label: "Testar Agente" }]} />
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Testar Agente</h1>
       <form onSubmit={handleSubmit} className="space-y-6">
 
