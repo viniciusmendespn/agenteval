@@ -6,6 +6,7 @@ _STOP_EVENTS = {"done"}
 
 _TOKEN = "__AGENTEVAL_MSG__"
 _SID_TOKEN = "__AGENTEVAL_SID__"
+_SP_TOKEN = "__AGENTEVAL_SP__"
 
 
 def _resolve_path(data: dict, path: str) -> str:
@@ -24,21 +25,28 @@ def _resolve_path(data: dict, path: str) -> str:
 
 
 def _build_payload(request_body_template: str, message: str, session_id: str = "",
-                   variables: dict | None = None) -> dict:
+                   variables: dict | None = None, system_prompt: str = "") -> dict:
     """
     Substitui placeholders no template JSON.
-    Ordem: variáveis customizadas → {{message}} → {{sessionId}}.
+    Ordem: variáveis customizadas → {{message}} → {{sessionId}} → {{system_prompt}}.
     As substituições built-in usam tokens seguros para não quebrar o JSON.
+    {{system_prompt}} é opcional — só atua se presente no template.
     """
     body_str = request_body_template
     for key, value in (variables or {}).items():
         body_str = body_str.replace(f"{{{{{key}}}}}", str(value))
-    body_str = body_str.replace("{{message}}", _TOKEN).replace("{{sessionId}}", _SID_TOKEN)
+    body_str = (body_str
+                .replace("{{message}}", _TOKEN)
+                .replace("{{sessionId}}", _SID_TOKEN)
+                .replace("{{system_prompt}}", _SP_TOKEN))
     parsed = json.loads(body_str)
 
     def replace_token(obj):
         if isinstance(obj, str):
-            return obj.replace(_TOKEN, message).replace(_SID_TOKEN, session_id)
+            return (obj
+                    .replace(_TOKEN, message)
+                    .replace(_SID_TOKEN, session_id)
+                    .replace(_SP_TOKEN, system_prompt or ""))
         if isinstance(obj, dict):
             return {k: replace_token(v) for k, v in obj.items()}
         if isinstance(obj, list):
@@ -59,9 +67,10 @@ def _fetch_token(token_url: str, token_request_body: str | None,
 
 
 def _call_http(url: str, api_key: str, message: str, request_body: str, output_field: str,
-               timeout: int, session_id: str = "", variables: dict | None = None) -> str:
+               timeout: int, session_id: str = "", variables: dict | None = None,
+               system_prompt: str = "") -> str:
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = _build_payload(request_body, message, session_id, variables)
+    payload = _build_payload(request_body, message, session_id, variables, system_prompt)
 
     response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
     response.raise_for_status()
@@ -71,13 +80,14 @@ def _call_http(url: str, api_key: str, message: str, request_body: str, output_f
 
 
 def _call_sse(url: str, api_key: str, message: str, request_body: str, output_field: str,
-              timeout: int, session_id: str = "", variables: dict | None = None) -> str:
+              timeout: int, session_id: str = "", variables: dict | None = None,
+              system_prompt: str = "") -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
     }
-    payload = _build_payload(request_body, message, session_id, variables)
+    payload = _build_payload(request_body, message, session_id, variables, system_prompt)
     chunks: list[str] = []
     current_event: str | None = None
 
@@ -130,6 +140,7 @@ def call_agent(
     token_request_body: str | None = None,
     token_output_field: str | None = None,
     token_header_name: str | None = None,
+    system_prompt: str = "",
 ) -> str:
     effective_api_key = api_key
     effective_variables = dict(variables or {})
@@ -142,6 +153,6 @@ def call_agent(
 
     if connection_type == "sse":
         return _call_sse(url, effective_api_key, message, request_body,
-                         output_field, timeout, session_id, effective_variables)
+                         output_field, timeout, session_id, effective_variables, system_prompt)
     return _call_http(url, effective_api_key, message, request_body,
-                      output_field, timeout, session_id, effective_variables)
+                      output_field, timeout, session_id, effective_variables, system_prompt)

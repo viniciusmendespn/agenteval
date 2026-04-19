@@ -1,4 +1,5 @@
 import json as _json
+import os as _os
 from pathlib import Path as _Path
 
 from fastapi import FastAPI
@@ -102,6 +103,11 @@ def _migrate():
         if "system_prompt" not in ds_cols:
             conn.execute(text("ALTER TABLE datasets ADD COLUMN system_prompt TEXT"))
 
+        # test_runs: task_id opaco para abstração de fila (inprocess, celery, sqs)
+        run_cols = {c["name"] for c in insp.get_columns("test_runs")}
+        if "task_id" not in run_cols:
+            conn.execute(text("ALTER TABLE test_runs ADD COLUMN task_id TEXT"))
+
         conn.commit()
 
 _migrate()
@@ -181,7 +187,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

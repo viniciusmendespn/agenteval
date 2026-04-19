@@ -47,7 +47,7 @@ export default function ResultDetailPage() {
     : tc?.expected_output ?? null
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl space-y-6">
       <Breadcrumb items={[
         { label: "Execuções", href: "/runs" },
         { label: `Execução #${id}`, href: `/runs/${id}` },

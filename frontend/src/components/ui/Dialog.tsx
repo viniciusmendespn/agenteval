@@ -21,7 +21,7 @@ export function DialogContent({ children, title, description, className }: Dialo
       <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/30 backdrop-blur-sm animate-fade-in" />
       <RadixDialog.Content
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl bg-white p-6 shadow-xl outline-none animate-fade-in",
+          "fixed inset-0 z-50 m-auto h-fit w-full max-w-md rounded-xl bg-white p-6 shadow-xl outline-none animate-fade-in",
           className
         )}
       >

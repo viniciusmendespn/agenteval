@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import { Dialog, DialogContent, DialogClose } from "./Dialog"
-import { LoadingButton } from "./LoadingButton"
 import { AlertTriangle } from "lucide-react"
 
 interface ConfirmDialogProps {
@@ -23,16 +22,10 @@ export function ConfirmDialog({
   variant = "danger",
 }: ConfirmDialogProps) {
   const [open, setOpen] = useState(false)
-  const [loading, setLoading] = useState(false)
 
-  async function handleConfirm() {
-    setLoading(true)
-    try {
-      await onConfirm()
-      setOpen(false)
-    } finally {
-      setLoading(false)
-    }
+  function handleConfirm() {
+    setOpen(false)
+    onConfirm()
   }
 
   return (
@@ -56,14 +49,12 @@ export function ConfirmDialog({
               Cancelar
             </button>
           </DialogClose>
-          <LoadingButton
-            variant="danger"
-            isLoading={loading}
-            loadingText="Excluindo…"
+          <button
+            className="flame-button cursor-pointer text-sm"
             onClick={handleConfirm}
           >
             {confirmText}
-          </LoadingButton>
+          </button>
         </div>
       </DialogContent>
     </Dialog>

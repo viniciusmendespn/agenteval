@@ -264,6 +264,8 @@ export const updateLLMProvider = (id: number, data: Omit<LLMProvider, "id" | "cr
   request<LLMProvider>(`/llm-providers/${id}`, { method: "PUT", body: JSON.stringify(data) })
 export const deleteLLMProvider = (id: number) =>
   request<void>(`/llm-providers/${id}`, { method: "DELETE" })
+export const testLLMProvider = (id: number) =>
+  request<{ ok: boolean; model: string; reply?: string; error?: string }>(`/llm-providers/${id}/test`, { method: "POST" })
 
 // --- Workspaces ---
 export const getWorkspaces = () => request<Workspace[]>("/workspaces/")

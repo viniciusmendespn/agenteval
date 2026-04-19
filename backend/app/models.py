@@ -95,6 +95,7 @@ class TestRun(Base):
     test_case_ids = Column(JSON, nullable=False)
     status = Column(String, default="pending")
     overall_score = Column(Float, nullable=True)
+    task_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 

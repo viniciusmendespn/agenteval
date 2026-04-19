@@ -52,7 +52,7 @@ const METRIC_MAP: Record<string, MetricInfo> = {
   non_advice: {
     label: "Ausência de Conselhos Indevidos",
     shortLabel: "Sem Conselhos",
-    invertScore: true,
+    invertScore: false,
   },
   role_violation: {
     label: "Conformidade de Papel",

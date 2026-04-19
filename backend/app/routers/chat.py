@@ -4,7 +4,6 @@ Permite criar agentes, perfis, casos de teste, iniciar runs e consultar o sistem
 """
 import json
 import os
-import threading
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from openai import AzureOpenAI
@@ -12,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Agent, EvaluationProfile, TestCase, TestRun
-from .runs import _execute_run
+from ..queue import get_task_queue
 from ..workspace import WorkspaceContext, get_current_workspace
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -402,9 +401,7 @@ def _tool_start_run(args: dict, db: Session, workspace_id: int) -> str:
     db.commit()
     db.refresh(run)
 
-    # Executa em background via thread (sem depender do BackgroundTasks do FastAPI)
-    t = threading.Thread(target=_execute_run, args=(run.id,), daemon=True)
-    t.start()
+    get_task_queue().enqueue("execute_run", {"run_id": run.id})
 
     return json.dumps({
         "run_id": run.id,
