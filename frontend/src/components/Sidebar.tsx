@@ -151,8 +151,10 @@ export default function Sidebar() {
           )}
           <Settings className={cn("h-4 w-4 shrink-0", settingsActive ? "text-red-600" : "text-gray-400")} />
           <span className="truncate">Configurações</span>
+          {version && (
+            <span className="ml-auto text-[10px] text-gray-300 font-normal truncate">{version}</span>
+          )}
         </Link>
-        <p className="px-3 text-xs text-gray-400">{version ?? "AgentEval"}</p>
       </div>
     </aside>
   )

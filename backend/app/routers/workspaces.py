@@ -62,9 +62,9 @@ def current_workspace(ctx: WorkspaceContext = Depends(get_current_workspace)):
 def create_workspace(
     data: WorkspaceCreate,
     db: Session = Depends(get_db),
-    ctx: WorkspaceContext = Depends(get_current_workspace),
+    x_user_email: str | None = Header(default=None, alias="X-User-Email"),
 ):
-    require_writer(ctx)
+    user = ensure_user(db, x_user_email)
     base_slug = slugify(data.slug or data.name)
     slug = base_slug
     suffix = 2
@@ -75,7 +75,7 @@ def create_workspace(
     workspace = Workspace(name=data.name, slug=slug)
     db.add(workspace)
     db.flush()
-    member = WorkspaceMember(workspace_id=workspace.id, user_id=ctx.user.id, role="owner")
+    member = WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner")
     db.add(member)
     db.commit()
     db.refresh(member)

@@ -5,7 +5,7 @@ const WORKSPACE_STORAGE_KEY = "agenteval.workspaceId"
 export function getActiveWorkspaceId() {
   if (typeof window === "undefined") return null
   const stored = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
-  if (!stored || stored === "1") return null
+  if (!stored) return null
   return stored
 }
 

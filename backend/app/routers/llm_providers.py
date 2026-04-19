@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import LLMProvider
 from ..schemas import LLMProviderCreate, LLMProviderOut
+from ..services.judge_llm import get_judge_from_provider
 
 router = APIRouter(prefix="/llm-providers", tags=["llm-providers"])
 
@@ -48,3 +49,16 @@ def delete_provider(provider_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Provedor LLM não encontrado")
     db.delete(provider)
     db.commit()
+
+
+@router.post("/{provider_id}/test")
+def test_provider(provider_id: int, db: Session = Depends(get_db)):
+    provider = db.get(LLMProvider, provider_id)
+    if not provider:
+        raise HTTPException(404, "Provedor LLM não encontrado")
+    judge = get_judge_from_provider(provider)
+    try:
+        reply, _ = judge.generate("Responda apenas: ok")
+        return {"ok": True, "model": provider.model_name, "reply": str(reply)[:200]}
+    except Exception as e:
+        return {"ok": False, "model": provider.model_name, "error": str(e)}

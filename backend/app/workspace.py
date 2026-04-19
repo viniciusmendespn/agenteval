@@ -10,10 +10,6 @@ from .models import User, Workspace, WorkspaceMember
 
 DEFAULT_USER_EMAIL = "local@agenteval.dev"
 LEGACY_DEFAULT_WORKSPACE_SLUG = "default"
-LOCAL_WORKSPACES = (
-    ("platconv", "platconv"),
-    ("pitchmaker", "pitchmaker"),
-)
 
 
 @dataclass(frozen=True)
@@ -70,11 +66,6 @@ def ensure_workspace(db: Session, slug: str, name: str, user: User | None = None
         db.add(WorkspaceMember(workspace_id=workspace.id, user_id=owner.id, role="owner"))
         db.flush()
     return workspace
-
-
-def ensure_local_workspaces(db: Session, user: User) -> None:
-    for slug, name in LOCAL_WORKSPACES:
-        ensure_workspace(db, slug=slug, name=name, user=user)
 
 
 def remove_legacy_default_workspace(db: Session) -> None:

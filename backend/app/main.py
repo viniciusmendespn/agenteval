@@ -8,7 +8,7 @@ from sqlalchemy import text, inspect
 from .database import engine, Base, SessionLocal
 from .routers import agents, test_cases, profiles, runs, imports, datasets, dataset_evaluations, workspaces
 from .routers import analytics, chat, llm_providers
-from .workspace import ensure_local_workspaces, ensure_user, remove_legacy_default_workspace
+from .workspace import ensure_user
 
 Base.metadata.create_all(bind=engine)
 
@@ -144,20 +144,6 @@ def _bootstrap_llm_provider():
 
 
 _bootstrap_llm_provider()
-
-
-def _bootstrap_local_workspaces():
-    db = SessionLocal()
-    try:
-        user = ensure_user(db)
-        ensure_local_workspaces(db, user)
-        remove_legacy_default_workspace(db)
-        db.commit()
-    finally:
-        db.close()
-
-
-_bootstrap_local_workspaces()
 
 
 def _recover_stuck_runs():
