@@ -63,10 +63,11 @@ export default function OptimizePromptPage() {
   return (
     <div className="max-w-5xl">
       <Breadcrumb items={[{ label: "Agentes", href: "/agents" }, { label: "Otimização de System Prompt" }]} />
-      <div className="flex items-center gap-2 mb-6">
-        <Sparkles className="h-5 w-5 text-red-600" />
-        <h1 className="text-2xl font-bold text-gray-900">Otimização de System Prompt</h1>
-      </div>
+      <div className="mb-6">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-red-600" />
+          <h1 className="text-2xl font-bold text-gray-900">Otimização de System Prompt</h1>
+        </div>
         {agent && <p className="text-sm text-gray-500 mt-0.5">{agent.name}</p>}
       </div>
 
