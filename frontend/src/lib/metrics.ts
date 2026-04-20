@@ -52,23 +52,28 @@ const METRIC_MAP: Record<string, MetricInfo> = {
   non_advice: {
     label: "Ausência de Conselhos Indevidos",
     shortLabel: "Sem Conselhos",
-    invertScore: false,
+    invertScore: true,
   },
   role_violation: {
     label: "Conformidade de Papel",
     shortLabel: "Papel",
     invertScore: true,
   },
+  prompt_alignment: {
+    label: "Alinhamento ao Prompt",
+    shortLabel: "Alinhamento",
+    invertScore: false,
+  },
 }
 
 export function getMetricInfo(key: string): MetricInfo {
   if (METRIC_MAP[key]) return METRIC_MAP[key]
-  const idx = key.replace("criterion_", "")
-  return {
-    label: `Critério ${Number(idx) + 1}`,
-    shortLabel: `Crit. ${Number(idx) + 1}`,
-    invertScore: false,
+  if (key.startsWith("criterion_")) {
+    const idx = Number(key.replace("criterion_", ""))
+    const n = isNaN(idx) ? key : idx + 1
+    return { label: `Critério ${n}`, shortLabel: `Crit. ${n}`, invertScore: false }
   }
+  return { label: key, shortLabel: key, invertScore: false }
 }
 
 /**

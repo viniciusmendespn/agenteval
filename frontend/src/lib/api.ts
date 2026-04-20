@@ -1,6 +1,8 @@
 export const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
 const WORKSPACE_STORAGE_KEY = "agenteval.workspaceId"
+export const CURRENT_USER_EMAIL = "ana.techlead@santander.com.br"
+export const CURRENT_USER_NAME = "Ana Silva"
 
 export function getActiveWorkspaceId() {
   if (typeof window === "undefined") return null
@@ -24,7 +26,7 @@ export function workspaceHeaders(includeJson = true): HeadersInit {
   if (includeJson) headers["Content-Type"] = "application/json"
   const workspaceId = getActiveWorkspaceId()
   if (workspaceId) headers["X-Workspace-Id"] = workspaceId
-  headers["X-User-Email"] = "local@agenteval.dev"
+  headers["X-User-Email"] = CURRENT_USER_EMAIL
   return headers
 }
 

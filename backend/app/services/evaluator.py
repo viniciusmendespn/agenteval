@@ -3,7 +3,7 @@ import os
 from deepeval.metrics import AnswerRelevancyMetric, HallucinationMetric, GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 # Métricas onde score menor = melhor (ausência do problema)
-LOWER_IS_BETTER = {"hallucination", "toxicity", "bias", "role_violation"}
+LOWER_IS_BETTER = {"hallucination", "toxicity", "bias", "role_violation", "non_advice"}
 
 
 def compute_passed(scores: dict[str, float], thresholds: dict[str, float]) -> bool:

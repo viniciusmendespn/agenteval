@@ -17,7 +17,7 @@ import {
   TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/cn"
-import { API } from "@/lib/api"
+import { API, CURRENT_USER_EMAIL, CURRENT_USER_NAME } from "@/lib/api"
 import WorkspaceSwitcher from "./WorkspaceSwitcher"
 
 const sections = [
@@ -131,6 +131,16 @@ export default function Sidebar() {
           ))}
         </div>
       </nav>
+
+      <div className="border-t border-gray-200 px-4 py-3 flex items-center gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
+          {CURRENT_USER_NAME.split(" ").map(n => n[0]).join("").slice(0, 2)}
+        </div>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-gray-900">{CURRENT_USER_NAME}</p>
+          <p className="truncate text-xs text-gray-400">{CURRENT_USER_EMAIL}</p>
+        </div>
+      </div>
 
       <div className="border-t border-gray-200 px-3 py-3 space-y-0.5">
         <Link
