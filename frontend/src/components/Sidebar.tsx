@@ -136,34 +136,31 @@ export default function Sidebar() {
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-100 text-xs font-bold text-red-700">
           {CURRENT_USER_NAME.split(" ").map(n => n[0]).join("").slice(0, 2)}
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-gray-900">{CURRENT_USER_NAME}</p>
-          <p className="truncate text-xs text-gray-400">{CURRENT_USER_EMAIL}</p>
+          {version
+            ? <p className="truncate text-[10px] text-gray-400">{version}</p>
+            : <p className="truncate text-xs text-gray-400">{CURRENT_USER_EMAIL}</p>
+          }
         </div>
-      </div>
-
-      <div className="border-t border-gray-200 px-3 py-3 space-y-0.5">
         <Link
           href="/settings"
+          title="Configurações"
           className={cn(
-            "relative flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-semibold transition-colors",
+            "relative shrink-0 flex h-7 w-7 items-center justify-center rounded-md transition-colors",
             settingsActive
-              ? "bg-red-50/60 text-red-700"
-              : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+              ? "bg-red-50 text-red-600"
+              : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"
           )}
         >
           {settingsActive && (
             <motion.span
               layoutId="sidebar-active"
-              className="absolute left-0 top-2 h-6 w-0.5 rounded-full bg-red-600"
+              className="absolute left-0 top-0.5 h-6 w-0.5 rounded-full bg-red-600"
               transition={{ type: "spring", stiffness: 500, damping: 40 }}
             />
           )}
-          <Settings className={cn("h-4 w-4 shrink-0", settingsActive ? "text-red-600" : "text-gray-400")} />
-          <span className="truncate">Configurações</span>
-          {version && (
-            <span className="ml-auto text-[10px] text-gray-300 font-normal truncate">{version}</span>
-          )}
+          <Settings className="h-4 w-4" />
         </Link>
       </div>
     </aside>
