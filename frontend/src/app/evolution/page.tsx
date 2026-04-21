@@ -343,6 +343,7 @@ export default function EvolutionPage() {
             <div className="px-5 py-4 border-b border-gray-100">
               <h2 className="text-sm font-semibold text-gray-700">Histórico de avaliações</h2>
             </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
@@ -383,7 +384,7 @@ export default function EvolutionPage() {
                       </td>
                       <td className="px-4 py-3 text-gray-600">
                         {new Date(p.date).toLocaleDateString("pt-BR", {
-                          day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
+                          day: "2-digit", month: "2-digit", year: "numeric",
                         })}
                       </td>
                       <td className="px-4 py-3 text-gray-600">
@@ -408,6 +409,7 @@ export default function EvolutionPage() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </>
       )}
