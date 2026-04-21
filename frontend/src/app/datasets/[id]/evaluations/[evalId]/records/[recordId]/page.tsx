@@ -89,14 +89,20 @@ export default function RecordDetailPage() {
 
               return (
                 <div key={k} className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
-                      <span className="text-sm font-semibold text-gray-800">{info.label}</span>
+                      <div className="relative group inline-flex items-center gap-1.5 cursor-help">
+                        <span className="text-sm font-semibold text-gray-800">{info.label}</span>
+                        <span className="text-gray-400 text-xs leading-none">ⓘ</span>
+                        <div className="absolute bottom-full left-0 mb-2 w-64 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 leading-relaxed shadow-lg">
+                          {criterionText ?? info.description}
+                        </div>
+                      </div>
                       {criterionText && (
                         <p className="text-xs text-gray-400 mt-0.5 italic">"{criterionText}"</p>
                       )}
                     </div>
-                    <span className={`text-sm font-bold px-2.5 py-1 rounded-lg ${badge}`}>{norm}%</span>
+                    <span className={`text-sm font-bold px-2.5 py-1 rounded-lg shrink-0 ${badge}`}>{norm}%</span>
                   </div>
                   <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
                     <div className={`h-full rounded-full ${bar} transition-all`} style={{ width: `${norm}%` }} />

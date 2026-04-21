@@ -41,15 +41,18 @@ function StatusBadge({ status }: { status: string }) {
   )
 }
 
-function ScorePills({ scores }: { scores: Record<string, number> }) {
+function ScorePills({ scores, criteria = [] }: { scores: Record<string, number>; criteria?: string[] }) {
   return (
     <div className="flex gap-1 flex-wrap">
       {Object.entries(scores).map(([k, v]) => {
         const norm = normalizeScore(k, v)
         const { pill } = scoreColorClasses(norm)
         const info = getMetricInfo(k)
+        const tooltipText = k.startsWith("criterion_")
+          ? criteria[Number(k.replace("criterion_", ""))]
+          : info.description
         return (
-          <span key={k} className={`text-xs px-2 py-0.5 rounded font-medium ${pill}`}>
+          <span key={k} title={tooltipText} className={`text-xs px-2 py-0.5 rounded font-medium cursor-help ${pill}`}>
             {info.shortLabel}: {norm}%
           </span>
         )
@@ -326,7 +329,7 @@ export default function RunPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {result?.scores && !result.error && <ScorePills scores={result.scores} />}
+                    {result?.scores && !result.error && <ScorePills scores={result.scores} criteria={profile?.criteria ?? []} />}
                     {result?.error && <span className="text-xs text-red-500 line-clamp-1">{result.error}</span>}
                   </td>
                   <td className="px-4 py-3 text-right">

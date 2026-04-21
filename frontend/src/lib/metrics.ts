@@ -16,6 +16,8 @@ export type MetricInfo = {
   shortLabel: string
   /** Se o score bruto do DeepEval é lower-is-better */
   invertScore: boolean
+  /** Descrição exibida no tooltip */
+  description: string
 }
 
 const METRIC_MAP: Record<string, MetricInfo> = {
@@ -23,46 +25,55 @@ const METRIC_MAP: Record<string, MetricInfo> = {
     label: "Relevância",
     shortLabel: "Relevância",
     invertScore: false,
+    description: "Avalia se a resposta é pertinente e relevante à pergunta do usuário.",
   },
   hallucination: {
     label: "Precisão Factual",
     shortLabel: "Factual",
     invertScore: true,
+    description: "Detecta se o agente inventou informações que não existem no contexto fornecido. Score mais alto = mais preciso factualmente.",
   },
   toxicity: {
     label: "Segurança (Toxicidade)",
     shortLabel: "Segurança",
     invertScore: true,
+    description: "Detecta linguagem ofensiva, agressiva ou inapropriada na resposta. Score mais alto = resposta mais segura.",
   },
   bias: {
     label: "Imparcialidade",
     shortLabel: "Imparcial",
     invertScore: true,
+    description: "Identifica viés de gênero, racial, político ou outro tipo na resposta. Score mais alto = resposta mais imparcial.",
   },
   faithfulness: {
     label: "Fidelidade",
     shortLabel: "Fidelidade",
     invertScore: false,
+    description: "Avalia se as afirmações da resposta são suportadas pelo contexto fornecido ao agente.",
   },
   latency: {
     label: "Latência",
     shortLabel: "Latência",
     invertScore: false,
+    description: "Avalia o tempo de resposta do agente. Resposta dentro do limite = 100%; degrada proporcionalmente se ultrapassar.",
   },
   non_advice: {
     label: "Ausência de Conselhos Indevidos",
     shortLabel: "Sem Conselhos",
     invertScore: true,
+    description: "Detecta se o agente emitiu conselhos sobre temas fora do escopo permitido (ex: jurídico, médico). Score mais alto = menos conselhos indevidos.",
   },
   role_violation: {
     label: "Conformidade de Papel",
     shortLabel: "Papel",
     invertScore: true,
+    description: "Detecta se o agente agiu fora do papel definido para ele. Score mais alto = maior conformidade com o papel esperado.",
   },
   prompt_alignment: {
     label: "Alinhamento ao Prompt",
     shortLabel: "Alinhamento",
     invertScore: false,
+    description: "Verifica se a resposta segue as instruções definidas no system prompt do agente.",
   },
 }
 
@@ -71,9 +82,9 @@ export function getMetricInfo(key: string): MetricInfo {
   if (key.startsWith("criterion_")) {
     const idx = Number(key.replace("criterion_", ""))
     const n = isNaN(idx) ? key : idx + 1
-    return { label: `Critério ${n}`, shortLabel: `Crit. ${n}`, invertScore: false }
+    return { label: `Critério ${n}`, shortLabel: `Crit. ${n}`, invertScore: false, description: "" }
   }
-  return { label: key, shortLabel: key, invertScore: false }
+  return { label: key, shortLabel: key, invertScore: false, description: "" }
 }
 
 /**

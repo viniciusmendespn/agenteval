@@ -352,7 +352,7 @@ export const createDatasetEvaluation = (datasetId: number, profileId: number) =>
 
 // --- Imports ---
 export type MappingRequest = {
-  dataset_name: string
+  dataset_name?: string
   dataset_description?: string
   dataset_system_prompt?: string
   file_ids: string[]
@@ -362,6 +362,7 @@ export type MappingRequest = {
   manual_context?: string
   session_id_path?: string
   order_path?: string
+  title_path?: string
 }
 
 export type AnalyzeResult = {
@@ -380,7 +381,7 @@ export type AnalyzeResult = {
 }
 
 export type PreviewResult = {
-  previews: { input: string; output?: string; context?: string[]; session_id?: string; turn_order?: number }[]
+  previews: { title?: string; input: string; output?: string; context?: string[]; session_id?: string; turn_order?: number }[]
   record_count: number
 }
 

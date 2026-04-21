@@ -6,8 +6,8 @@ import {
   RadarChart, Radar, PolarGrid, PolarAngleAxis,
   ResponsiveContainer, Tooltip,
 } from "recharts"
-import { getDatasetEvaluation, getDataset,
-  type DatasetEvaluation, type DatasetDetail } from "@/lib/api"
+import { getDatasetEvaluation, getDataset, getProfile,
+  type DatasetEvaluation, type DatasetDetail, type EvaluationProfile } from "@/lib/api"
 import { getMetricInfo, scoreColorClasses, normalizeScore } from "@/lib/metrics"
 import { cn } from "@/lib/cn"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
@@ -27,15 +27,18 @@ function ScoreCircle({ score }: { score?: number | null }) {
   )
 }
 
-function ScorePills({ scores }: { scores: Record<string, number> }) {
+function ScorePills({ scores, criteria = [] }: { scores: Record<string, number>; criteria?: string[] }) {
   return (
     <div className="flex gap-1 flex-wrap">
       {Object.entries(scores).map(([k, v]) => {
         const norm = normalizeScore(k, v)
         const { pill } = scoreColorClasses(norm)
         const info = getMetricInfo(k)
+        const tooltipText = k.startsWith("criterion_")
+          ? criteria[Number(k.replace("criterion_", ""))]
+          : info.description
         return (
-          <span key={k} className={`text-xs px-2 py-0.5 rounded font-medium ${pill}`}>
+          <span key={k} title={tooltipText} className={`text-xs px-2 py-0.5 rounded font-medium cursor-help ${pill}`}>
             {info.shortLabel}: {norm}%
           </span>
         )
@@ -108,6 +111,7 @@ export default function DatasetEvaluationPage() {
   const { id, evalId } = useParams<{ id: string; evalId: string }>()
   const [ev, setEv] = useState<DatasetEvaluation | null>(null)
   const [ds, setDs] = useState<DatasetDetail | null>(null)
+  const [profile, setProfile] = useState<EvaluationProfile | null>(null)
   const [error, setError] = useState(false)
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all")
   const [searchText, setSearchText] = useState("")
@@ -122,7 +126,10 @@ export default function DatasetEvaluationPage() {
       try {
         const result = await getDatasetEvaluation(Number(id), Number(evalId))
         setEv(result)
-        if (result.status !== "running") clearInterval(timer)
+        if (result.status !== "running") {
+          clearInterval(timer)
+          getProfile(result.profile_id).then(setProfile).catch(() => {})
+        }
       } catch {
         setError(true)
         clearInterval(timer)
@@ -296,7 +303,7 @@ export default function DatasetEvaluationPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {result && !result.error && <ScorePills scores={result.scores} />}
+                    {result && !result.error && <ScorePills scores={result.scores} criteria={profile?.criteria ?? []} />}
                     {result?.error && (
                       <span className="text-xs text-red-500 line-clamp-1">{result.error}</span>
                     )}

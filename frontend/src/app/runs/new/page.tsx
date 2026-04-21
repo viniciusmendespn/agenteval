@@ -60,7 +60,7 @@ export default function NewRunPage() {
       const run = await createRun({
         agent_id: Number(agentId),
         profile_id: Number(profileId),
-        test_case_ids: [...selectedCases],
+        test_case_ids: Array.from(selectedCases),
       })
       window.location.href = `/runs/${run.id}`
     } catch (e: any) {

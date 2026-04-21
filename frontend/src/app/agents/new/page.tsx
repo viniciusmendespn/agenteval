@@ -315,7 +315,7 @@ export default function NewAgentPage() {
               <code className="font-mono text-gray-500">{previewSessionId}</code>
             </p>
           )}
-          {preview && (() => {
+          {preview != null && (() => {
             const p = preview as any
             return (
               <div className="space-y-2">

@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState, useMemo } from "react"
 import {
-  getAgents, getDatasets, getAgentTimeline, getDatasetTimeline,
+  getAgents, getDatasets, getAgentTimeline, getDatasetTimeline, getProfile,
   type Agent, type Dataset, type TimelineData,
 } from "@/lib/api"
 import { getMetricInfo, scoreColorClasses } from "@/lib/metrics"
@@ -26,6 +26,8 @@ export default function EvolutionPage() {
   const [timeline, setTimeline] = useState<TimelineData | null>(null)
   const [loading, setLoading] = useState(false)
   const [visibleMetrics, setVisibleMetrics] = useState<Set<string>>(new Set())
+  // mapa criterion_N → texto real do critério (coletado dos perfis usados na timeline)
+  const [criteriaMap, setCriteriaMap] = useState<Record<string, string>>({})
 
   useEffect(() => {
     getAgents().then(setAgents).catch(() => {})
@@ -33,18 +35,30 @@ export default function EvolutionPage() {
   }, [])
 
   useEffect(() => {
-    if (!source) { setTimeline(null); return }
+    if (!source) { setTimeline(null); setCriteriaMap({}); return }
     setLoading(true)
     const fetcher = source.type === "agent"
       ? getAgentTimeline(source.id)
       : getDatasetTimeline(source.id)
     fetcher
-      .then(data => {
+      .then(async data => {
         setTimeline(data)
-        // Mostrar todas as métricas por padrão
         const allMetrics = new Set<string>()
         data.points.forEach(p => Object.keys(p.metrics).forEach(m => allMetrics.add(m)))
         setVisibleMetrics(allMetrics)
+
+        // Busca critérios dos perfis usados para resolver criterion_*
+        const profileIds = Array.from(new Set(data.points.map(p => p.profile_id)))
+        const profiles = await Promise.all(profileIds.map(id => getProfile(id).catch(() => null)))
+        const map: Record<string, string> = {}
+        for (const profile of profiles) {
+          if (!profile?.criteria) continue
+          profile.criteria.forEach((text, i) => {
+            const key = `criterion_${i}`
+            if (!map[key]) map[key] = text
+          })
+        }
+        setCriteriaMap(map)
       })
       .catch(() => setTimeline(null))
       .finally(() => setLoading(false))
@@ -208,19 +222,26 @@ export default function EvolutionPage() {
               {allMetrics.map((m, i) => {
                 const info = getMetricInfo(m)
                 const active = visibleMetrics.has(m)
+                const tooltipText = criteriaMap[m] ?? info.description
                 return (
-                  <button
-                    key={m}
-                    onClick={() => toggleMetric(m)}
-                    className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors border ${
-                      active
-                        ? "text-white border-transparent"
-                        : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"
-                    }`}
-                    style={active ? { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] } : {}}
-                  >
-                    {info.label}
-                  </button>
+                  <div key={m} className="relative group">
+                    <button
+                      onClick={() => toggleMetric(m)}
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium transition-colors border ${
+                        active
+                          ? "text-white border-transparent"
+                          : "bg-white text-gray-400 border-gray-200 hover:border-gray-300"
+                      }`}
+                      style={active ? { backgroundColor: CHART_COLORS[i % CHART_COLORS.length] } : {}}
+                    >
+                      {info.label}
+                    </button>
+                    {tooltipText && (
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-gray-900 text-white text-xs rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 leading-relaxed shadow-lg text-left">
+                        {tooltipText}
+                      </div>
+                    )}
+                  </div>
                 )
               })}
               <button
@@ -330,11 +351,16 @@ export default function EvolutionPage() {
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Perfil</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Score</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Aprovação</th>
-                  {allMetrics.map(m => (
-                    <th key={m} className="text-left px-4 py-3 text-xs font-medium text-gray-500">
-                      {getMetricInfo(m).shortLabel}
-                    </th>
-                  ))}
+                  {allMetrics.map(m => {
+                    const info = getMetricInfo(m)
+                    const tooltipText = criteriaMap[m] ?? info.description ?? info.label
+                    return (
+                      <th key={m} className="text-left px-4 py-3 text-xs font-medium text-gray-500 cursor-help"
+                        title={tooltipText}>
+                        {info.shortLabel}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
