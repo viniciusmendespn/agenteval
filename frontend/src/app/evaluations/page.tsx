@@ -3,11 +3,8 @@
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, Cell, ResponsiveContainer,
-} from "recharts"
 import { getAllDatasetEvaluations, type DatasetEvaluationSummary } from "@/lib/api"
-import { TableSkeleton, Skeleton } from "@/components/Skeleton"
+import { TableSkeleton } from "@/components/Skeleton"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 const statusColor: Record<string, string> = {
@@ -30,21 +27,6 @@ function ScoreBadge({ score }: { score?: number | null }) {
   const pct = Math.round(score * 100)
   const color = pct >= 80 ? "text-green-600 bg-green-50" : pct >= 50 ? "text-yellow-700 bg-yellow-50" : "text-red-600 bg-red-50"
   return <span className={`text-sm font-bold px-2 py-0.5 rounded ${color}`}>{pct}%</span>
-}
-
-function barColor(score: number) {
-  if (score >= 80) return "#16a34a"
-  if (score >= 50) return "#ca8a04"
-  return "#dc2626"
-}
-
-function ChartSkeleton() {
-  return (
-    <div className="flame-panel p-5 mb-4">
-      <Skeleton className="h-4 w-40 mb-4" />
-      <Skeleton className="h-40 w-full" />
-    </div>
-  )
 }
 
 export default function EvaluationsPage() {
@@ -76,23 +58,6 @@ export default function EvaluationsPage() {
     })
   }, [evaluations, datasetFilter, statusFilter])
 
-  const chartData = useMemo(() => {
-    const byDataset = new Map<string, number[]>()
-    for (const ev of evaluations) {
-      if (ev.status === "completed" && ev.overall_score != null) {
-        const key = ev.dataset_name
-        if (!byDataset.has(key)) byDataset.set(key, [])
-        byDataset.get(key)!.push(ev.overall_score)
-      }
-    }
-    return Array.from(byDataset.entries())
-      .map(([name, scores]) => ({
-        name: name.length > 20 ? name.slice(0, 18) + "…" : name,
-        score: Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100),
-      }))
-      .sort((a, b) => b.score - a.score)
-  }, [evaluations])
-
   return (
     <div>
       <Breadcrumb items={[{ label: "Avaliações de Dataset" }]} />
@@ -109,45 +74,6 @@ export default function EvaluationsPage() {
           Gerenciar datasets →
         </Link>
       </div>
-
-      {/* Gráfico */}
-      {loading ? (
-        <ChartSkeleton />
-      ) : chartData.length > 0 && (
-        <div className="flame-panel p-5 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-700">Score médio por dataset</h2>
-            <span className="text-xs text-gray-400">100% = ótimo · apenas avaliações concluídas</span>
-          </div>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={chartData} barCategoryGap="30%">
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 11, fill: "#6b7280" }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                domain={[0, 100]}
-                tick={{ fontSize: 11, fill: "#6b7280" }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(v) => `${v}%`}
-                width={38}
-              />
-              <Tooltip
-                formatter={(v: number) => [`${v}%`, "Score médio"]}
-                contentStyle={{ fontSize: 12, borderRadius: 8 }}
-              />
-              <Bar dataKey="score" radius={[4, 4, 0, 0]}>
-                {chartData.map((entry, i) => (
-                  <Cell key={i} fill={barColor(entry.score)} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
 
       {/* Filtros */}
       <div className="flex gap-3 mb-4">
