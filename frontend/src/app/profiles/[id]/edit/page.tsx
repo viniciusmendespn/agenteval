@@ -35,6 +35,7 @@ export default function EditProfilePage() {
       use_prompt_alignment: p.use_prompt_alignment ?? false,
       prompt_alignment_threshold: p.prompt_alignment_threshold ?? 0.5,
       llm_provider_id: p.llm_provider_id ?? null,
+      guardrail_ids: p.guardrail_ids ?? [],
     })).catch(() => {})
   }, [id])
 

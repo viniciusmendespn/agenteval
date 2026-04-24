@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { Upload, Trash2, ChevronDown, ChevronUp, Save } from "lucide-react"
-import { getDataset, updateDataset, bulkDeleteRecords, type DatasetDetail, type DatasetRecord } from "@/lib/api"
+import { getDataset, updateDataset, syncDatasetPrompt, bulkDeleteRecords, type DatasetDetail, type DatasetRecord } from "@/lib/api"
 import AppendDatasetModal from "@/components/AppendDatasetModal"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
@@ -22,6 +22,7 @@ export default function DatasetPage() {
   const [showPrompt, setShowPrompt] = useState(false)
   const [promptEdit, setPromptEdit] = useState("")
   const [savingPrompt, setSavingPrompt] = useState(false)
+  const [syncingPrompt, setSyncingPrompt] = useState(false)
 
   const load = useCallback(() => {
     getDataset(id).then(data => {
@@ -87,6 +88,17 @@ export default function DatasetPage() {
     }
   }
 
+  async function handleSyncPrompt() {
+    if (!ds) return
+    setSyncingPrompt(true)
+    try {
+      await syncDatasetPrompt(ds.id)
+      load()
+    } finally {
+      setSyncingPrompt(false)
+    }
+  }
+
   async function handleDeleteSelected() {
     if (!ds || selected.size === 0) return
     const confirmed = window.confirm(
@@ -111,7 +123,14 @@ export default function DatasetPage() {
           <Breadcrumb items={[{ label: "Datasets", href: "/datasets" }, { label: ds.name }]} />
           <h1 className="text-2xl font-bold text-gray-900 mt-1">{ds.name}</h1>
           {ds.description && <p className="text-sm text-gray-500 mt-0.5">{ds.description}</p>}
-          <p className="text-xs text-gray-400 mt-1">{ds.records.length.toLocaleString()} registros</p>
+          <div className="flex items-center gap-3 mt-1">
+            <p className="text-xs text-gray-400">{ds.records.length.toLocaleString()} registros</p>
+            {ds.agent_name && (
+              <span className="text-xs bg-teal-50 text-teal-700 border border-teal-200 px-2 py-0.5 rounded-full font-medium">
+                Vinculado a: {ds.agent_name}
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex gap-2">
           <button
@@ -151,15 +170,27 @@ export default function DatasetPage() {
               onChange={e => setPromptEdit(e.target.value)}
               placeholder="Ex: Você é um assistente de suporte bancário. Responda sempre com empatia e clareza..."
             />
-            <div className="flex justify-end">
-              <button
-                onClick={handleSavePrompt}
-                disabled={savingPrompt}
-                className="flame-button flex items-center gap-1.5 disabled:opacity-50"
-              >
-                <Save className="h-3.5 w-3.5" />
-                {savingPrompt ? "Salvando..." : "Salvar"}
-              </button>
+            <div className="flex items-center justify-between">
+              {ds.agent_id && (
+                <button
+                  type="button"
+                  onClick={handleSyncPrompt}
+                  disabled={syncingPrompt}
+                  className="text-xs text-teal-600 hover:text-teal-800 underline disabled:opacity-50"
+                >
+                  {syncingPrompt ? "Sincronizando..." : "Sincronizar system prompt do agente"}
+                </button>
+              )}
+              <div className="ml-auto">
+                <button
+                  onClick={handleSavePrompt}
+                  disabled={savingPrompt}
+                  className="flame-button flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {savingPrompt ? "Salvando..." : "Salvar"}
+                </button>
+              </div>
             </div>
           </div>
         )}

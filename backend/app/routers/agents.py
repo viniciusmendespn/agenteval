@@ -1,11 +1,13 @@
 import json
+from datetime import datetime
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Agent, TestRun, TestResult
-from ..schemas import AgentCreate, AgentOut
+from ..models import Agent, TestRun, TestResult, AgentPromptVersion
+from ..schemas import AgentCreate, AgentOut, AgentPromptVersionOut, AgentPromptVersionUpdate
 from ..services.judge_llm import resolve_judge
 from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
@@ -161,11 +163,180 @@ def update_agent(
     agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
     if not agent:
         raise HTTPException(404, "Agente não encontrado")
+
+    new_prompt = data.system_prompt
+    if agent.system_prompt and new_prompt != agent.system_prompt:
+        # Arquiva a versão ativa atual
+        current_active = db.query(AgentPromptVersion).filter(
+            AgentPromptVersion.agent_id == agent_id,
+            AgentPromptVersion.status == "active",
+        ).first()
+        if current_active:
+            current_active.status = "archived"
+
+        # Cria nova versão ativa com o novo conteúdo
+        max_v = db.query(func.max(AgentPromptVersion.version_num)).filter(
+            AgentPromptVersion.agent_id == agent_id
+        ).scalar() or 0
+        db.add(AgentPromptVersion(
+            agent_id=agent_id,
+            workspace_id=workspace.workspace_id,
+            system_prompt=new_prompt,
+            version_num=max_v + 1,
+            status="active",
+            created_at=datetime.utcnow(),
+        ))
+    elif new_prompt and not agent.system_prompt:
+        # Primeiro prompt: cria versão ativa
+        db.add(AgentPromptVersion(
+            agent_id=agent_id,
+            workspace_id=workspace.workspace_id,
+            system_prompt=new_prompt,
+            version_num=1,
+            status="active",
+            created_at=datetime.utcnow(),
+        ))
+
     for field, value in data.model_dump().items():
         setattr(agent, field, value)
     db.commit()
     db.refresh(agent)
     return agent
+
+
+@router.get("/{agent_id}/prompt-versions", response_model=list[AgentPromptVersionOut])
+def list_prompt_versions(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
+    if not agent:
+        raise HTTPException(404, "Agente não encontrado")
+    return (
+        db.query(AgentPromptVersion)
+        .filter(AgentPromptVersion.agent_id == agent_id)
+        .order_by(AgentPromptVersion.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/{agent_id}/prompt-versions/{ver_id}/rollback", response_model=AgentPromptVersionOut)
+def rollback_prompt(
+    agent_id: int,
+    ver_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    """Cria um novo RASCUNHO com o conteúdo da versão alvo (não ativa imediatamente)."""
+    require_writer(workspace)
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
+    if not agent:
+        raise HTTPException(404, "Agente não encontrado")
+    version = db.query(AgentPromptVersion).filter(
+        AgentPromptVersion.id == ver_id,
+        AgentPromptVersion.agent_id == agent_id,
+    ).first()
+    if not version:
+        raise HTTPException(404, "Versão não encontrada")
+
+    max_v = db.query(func.max(AgentPromptVersion.version_num)).filter(
+        AgentPromptVersion.agent_id == agent_id
+    ).scalar() or 0
+    draft = AgentPromptVersion(
+        agent_id=agent_id,
+        workspace_id=workspace.workspace_id,
+        system_prompt=version.system_prompt,
+        version_num=max_v + 1,
+        status="draft",
+        label=f"Rascunho baseado na v{version.version_num}",
+        created_at=datetime.utcnow(),
+    )
+    db.add(draft)
+    db.commit()
+    db.refresh(draft)
+    return draft
+
+
+@router.post("/{agent_id}/prompt-versions/{ver_id}/activate", response_model=AgentOut)
+def activate_prompt_version(
+    agent_id: int,
+    ver_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    """Promove um rascunho para ativo (arquiva o ativo atual). Atualiza Agent.system_prompt."""
+    require_writer(workspace)
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
+    if not agent:
+        raise HTTPException(404, "Agente não encontrado")
+    draft = db.query(AgentPromptVersion).filter(
+        AgentPromptVersion.id == ver_id,
+        AgentPromptVersion.agent_id == agent_id,
+        AgentPromptVersion.status == "draft",
+    ).first()
+    if not draft:
+        raise HTTPException(404, "Rascunho não encontrado (somente rascunhos podem ser ativados)")
+
+    # Arquiva versão ativa atual
+    current_active = db.query(AgentPromptVersion).filter(
+        AgentPromptVersion.agent_id == agent_id,
+        AgentPromptVersion.status == "active",
+    ).first()
+    if current_active:
+        current_active.status = "archived"
+
+    draft.status = "active"
+    agent.system_prompt = draft.system_prompt
+    db.commit()
+    db.refresh(agent)
+    return agent
+
+
+@router.patch("/{agent_id}/prompt-versions/{ver_id}", response_model=AgentPromptVersionOut)
+def update_draft_version(
+    agent_id: int,
+    ver_id: int,
+    data: AgentPromptVersionUpdate,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    """Atualiza label e/ou conteúdo de um rascunho."""
+    require_writer(workspace)
+    draft = db.query(AgentPromptVersion).filter(
+        AgentPromptVersion.id == ver_id,
+        AgentPromptVersion.agent_id == agent_id,
+        AgentPromptVersion.status == "draft",
+    ).first()
+    if not draft:
+        raise HTTPException(404, "Rascunho não encontrado (somente rascunhos podem ser editados)")
+    if data.label is not None:
+        draft.label = data.label
+    if data.system_prompt is not None:
+        draft.system_prompt = data.system_prompt
+    db.commit()
+    db.refresh(draft)
+    return draft
+
+
+@router.delete("/{agent_id}/prompt-versions/{ver_id}", status_code=204)
+def delete_draft_version(
+    agent_id: int,
+    ver_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    """Exclui um rascunho (não permite excluir versões ativas ou arquivadas)."""
+    require_writer(workspace)
+    draft = db.query(AgentPromptVersion).filter(
+        AgentPromptVersion.id == ver_id,
+        AgentPromptVersion.agent_id == agent_id,
+        AgentPromptVersion.status == "draft",
+    ).first()
+    if not draft:
+        raise HTTPException(404, "Rascunho não encontrado (somente rascunhos podem ser excluídos)")
+    db.delete(draft)
+    db.commit()
 
 
 @router.delete("/{agent_id}", status_code=204)

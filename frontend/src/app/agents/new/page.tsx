@@ -66,6 +66,16 @@ export default function NewAgentPage() {
   const [previewSessionId, setPreviewSessionId] = useState("")
   const [previewing, setPreviewing] = useState(false)
 
+  const [modelProvider, setModelProvider] = useState("custom")
+  const [modelName, setModelName] = useState("")
+  const [temperature, setTemperature] = useState<number | "">(0.7)
+  const [maxTokens, setMaxTokens] = useState<number | "">("")
+  const [environment, setEnvironment] = useState("experiment")
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState("")
+  const [extraMetadata, setExtraMetadata] = useState("{}")
+  const [extraMetaError, setExtraMetaError] = useState<string | null>(null)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -117,11 +127,24 @@ export default function NewAgentPage() {
     }
   }
 
+  function addTag(tag: string) {
+    const t = tag.trim()
+    if (t && !tags.includes(t)) setTags(prev => [...prev, t])
+    setTagInput("")
+  }
+
+  function handleExtraMetadataChange(val: string) {
+    setExtraMetadata(val)
+    try { JSON.parse(val); setExtraMetaError(null) } catch { setExtraMetaError("JSON inválido") }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (bodyError) return
+    if (bodyError || extraMetaError) return
     setLoading(true)
     setError(null)
+    let parsedExtra: Record<string, unknown> = {}
+    try { parsedExtra = JSON.parse(extraMetadata) } catch { parsedExtra = {} }
     try {
       await createAgent({
         name, url, api_key: apiKey, connection_type: connectionType,
@@ -131,6 +154,13 @@ export default function NewAgentPage() {
         token_request_body: useTokenCall ? tokenRequestBody || undefined : undefined,
         token_output_field: useTokenCall ? tokenOutputField || undefined : undefined,
         token_header_name: useTokenCall ? tokenHeaderName || undefined : undefined,
+        model_provider: modelProvider,
+        model_name: modelName || undefined,
+        temperature: temperature !== "" ? Number(temperature) : undefined,
+        max_tokens: maxTokens !== "" ? Number(maxTokens) : undefined,
+        environment,
+        tags,
+        extra_metadata: parsedExtra,
       })
       showAfterNav("Agente criado")
       window.location.href = "/agents"
@@ -349,13 +379,84 @@ export default function NewAgentPage() {
           })()}
         </section>
 
+        {/* Configuração do Modelo */}
+        <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-gray-700">Configuração do Modelo <span className="font-normal text-gray-400">(opcional)</span></h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={lbl}>Provedor</label>
+              <select className={inp} value={modelProvider} onChange={e => setModelProvider(e.target.value)}>
+                <option value="custom">Custom</option>
+                <option value="azure-openai">Azure OpenAI</option>
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="google">Google</option>
+              </select>
+            </div>
+            <div>
+              <label className={lbl}>Modelo</label>
+              <input className={inp} list="model-suggestions" value={modelName} onChange={e => setModelName(e.target.value)} placeholder="gpt-4o, claude-3-5-sonnet..." />
+              <datalist id="model-suggestions">
+                <option value="gpt-4o" /><option value="gpt-4o-mini" /><option value="gpt-4-turbo" />
+                <option value="claude-3-5-sonnet-20241022" /><option value="claude-3-opus-20240229" />
+                <option value="gemini-1.5-pro" /><option value="gemini-1.5-flash" />
+              </datalist>
+            </div>
+            <div>
+              <label className={lbl}>Temperatura <span className="font-normal text-gray-400">(0–2)</span></label>
+              <div className="flex items-center gap-2">
+                <input type="range" min={0} max={2} step={0.1} value={temperature === "" ? 0.7 : temperature}
+                  onChange={e => setTemperature(Number(e.target.value))} className="flex-1 accent-red-600" />
+                <input type="number" min={0} max={2} step={0.1} value={temperature}
+                  onChange={e => setTemperature(e.target.value === "" ? "" : Number(e.target.value))}
+                  className="w-16 border border-gray-300 rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-red-500" />
+              </div>
+            </div>
+            <div>
+              <label className={lbl}>Max Tokens</label>
+              <input type="number" className={inp} min={1} value={maxTokens}
+                onChange={e => setMaxTokens(e.target.value === "" ? "" : Number(e.target.value))} placeholder="ex: 2000" />
+            </div>
+            <div>
+              <label className={lbl}>Ambiente</label>
+              <select className={inp} value={environment} onChange={e => setEnvironment(e.target.value)}>
+                <option value="experiment">Experimento</option>
+                <option value="development">Desenvolvimento</option>
+                <option value="staging">Staging</option>
+                <option value="production">Produção</option>
+              </select>
+            </div>
+            <div>
+              <label className={lbl}>Tags</label>
+              <div className="flex flex-wrap gap-1 mb-1">
+                {tags.map(t => (
+                  <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs">
+                    {t}
+                    <button type="button" onClick={() => setTags(prev => prev.filter(x => x !== t))} className="text-purple-400 hover:text-purple-600">×</button>
+                  </span>
+                ))}
+              </div>
+              <input className={inp} value={tagInput} onChange={e => setTagInput(e.target.value)}
+                placeholder="Adicionar tag + Enter"
+                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(tagInput) } }} />
+            </div>
+          </div>
+          <div>
+            <label className={lbl}>Configurações extras <span className="font-normal text-gray-400">(JSON livre)</span></label>
+            <textarea className={`${inp} h-20 font-mono text-xs resize-y ${extraMetaError ? "border-red-400" : ""}`}
+              value={extraMetadata} onChange={e => handleExtraMetadataChange(e.target.value)}
+              placeholder='{"top_p": 0.9, "seed": 42}' spellCheck={false} />
+            {extraMetaError && <p className="text-xs text-red-500 mt-1">{extraMetaError}</p>}
+          </div>
+        </section>
+
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <LoadingButton
           type="submit"
           isLoading={loading}
           loadingText="Salvando agente…"
-          disabled={!!bodyError}
+          disabled={!!bodyError || !!extraMetaError}
           className="w-full rounded-lg"
         >
           Salvar agente

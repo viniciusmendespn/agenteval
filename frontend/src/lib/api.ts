@@ -57,6 +57,16 @@ export type LLMProvider = {
   created_at: string
 }
 
+export type AgentMetadataSnapshot = {
+  model_provider?: string | null
+  model_name?: string | null
+  temperature?: number | null
+  max_tokens?: number | null
+  environment?: string | null
+  tags: string[]
+  extra_metadata: Record<string, unknown>
+}
+
 export type Agent = {
   id: number
   name: string
@@ -71,6 +81,24 @@ export type Agent = {
   token_request_body?: string
   token_output_field?: string
   token_header_name?: string
+  model_provider: string
+  model_name?: string | null
+  temperature?: number | null
+  max_tokens?: number | null
+  environment: string
+  tags: string[]
+  extra_metadata: Record<string, unknown>
+  created_at: string
+}
+
+export type Guardrail = {
+  id: number
+  name: string
+  description?: string | null
+  mode: "input" | "output" | "both"
+  criterion: string
+  preset_key?: string | null
+  is_system: boolean
   created_at: string
 }
 
@@ -116,6 +144,7 @@ export type EvaluationProfile = {
   use_prompt_alignment: boolean
   prompt_alignment_threshold: number
   llm_provider_id?: number | null
+  guardrail_ids: number[]
   created_at: string
 }
 
@@ -152,8 +181,8 @@ export type RunBreakdown = {
 }
 
 export type RunComparison = {
-  run_a: { id: number; agent_name: string; score?: number | null; created_at: string; total_cases: number }
-  run_b: { id: number; agent_name: string; score?: number | null; created_at: string; total_cases: number }
+  run_a: { id: number; agent_name: string; score?: number | null; created_at: string; total_cases: number; agent_metadata_snapshot?: AgentMetadataSnapshot | null }
+  run_b: { id: number; agent_name: string; score?: number | null; created_at: string; total_cases: number; agent_metadata_snapshot?: AgentMetadataSnapshot | null }
   metric_comparison: { metric: string; score_a?: number | null; score_b?: number | null; delta?: number | null }[]
   cases: {
     test_case_id: number
@@ -188,13 +217,15 @@ export type TestResult = {
 
 export type TestRun = {
   id: number
+  name?: string
   agent_id: number
   agent_name?: string
   profile_id: number
   profile_name?: string
   test_case_ids: number[]
-  status: "pending" | "running" | "completed" | "failed"
+  status: "pending" | "running" | "completed" | "failed" | "cancelled"
   overall_score?: number
+  agent_metadata_snapshot?: AgentMetadataSnapshot | null
   created_at: string
   completed_at?: string
   results: TestResult[]
@@ -211,11 +242,22 @@ export type DatasetRecord = {
   created_at: string
 }
 
+export type AgentPromptVersion = {
+  id: number
+  version_num: number
+  system_prompt: string
+  status: "draft" | "active" | "archived"
+  label?: string | null
+  created_at: string
+}
+
 export type Dataset = {
   id: number
   name: string
   description?: string
   system_prompt?: string
+  agent_id?: number | null
+  agent_name?: string | null
   record_count: number
   created_at: string
 }
@@ -225,6 +267,8 @@ export type DatasetDetail = {
   name: string
   description?: string
   system_prompt?: string
+  agent_id?: number | null
+  agent_name?: string | null
   created_at: string
   records: DatasetRecord[]
 }
@@ -288,6 +332,25 @@ export const optimizeAgentPrompt = (id: number) =>
   request<{ current_prompt: string; suggested_prompt: string; reasoning: string; failed_cases_analyzed: number }>(
     `/agents/${id}/optimize-prompt`, { method: "POST" }
   )
+export const getAgentPromptVersions = (id: number) =>
+  request<AgentPromptVersion[]>(`/agents/${id}/prompt-versions`)
+export const rollbackAgentPrompt = (agentId: number, verId: number) =>
+  request<AgentPromptVersion>(`/agents/${agentId}/prompt-versions/${verId}/rollback`, { method: "POST" })
+export const activatePromptVersion = (agentId: number, verId: number) =>
+  request<Agent>(`/agents/${agentId}/prompt-versions/${verId}/activate`, { method: "POST" })
+export const updateDraftVersion = (agentId: number, verId: number, data: { label?: string; system_prompt?: string }) =>
+  request<AgentPromptVersion>(`/agents/${agentId}/prompt-versions/${verId}`, { method: "PATCH", body: JSON.stringify(data) })
+export const deletePromptVersion = (agentId: number, verId: number) =>
+  request<void>(`/agents/${agentId}/prompt-versions/${verId}`, { method: "DELETE" })
+
+// --- Guardrails ---
+export const getGuardrails = () => request<Guardrail[]>("/guardrails/")
+export const createGuardrail = (data: Omit<Guardrail, "id" | "preset_key" | "is_system" | "created_at">) =>
+  request<Guardrail>("/guardrails/", { method: "POST", body: JSON.stringify(data) })
+export const updateGuardrail = (id: number, data: Omit<Guardrail, "id" | "preset_key" | "is_system" | "created_at">) =>
+  request<Guardrail>(`/guardrails/${id}`, { method: "PUT", body: JSON.stringify(data) })
+export const deleteGuardrail = (id: number) =>
+  request<void>(`/guardrails/${id}`, { method: "DELETE" })
 export const testConnection = (url: string, api_key: string) =>
   request<{ ok: boolean; status_code?: number; error?: string }>("/agents/test-connection", {
     method: "POST", body: JSON.stringify({ url, api_key }),
@@ -331,8 +394,10 @@ export const createRun = (data: { agent_id: number; profile_id: number; test_cas
 // --- Datasets (avaliação de histórico) ---
 export const getDatasets = () => request<Dataset[]>("/datasets/")
 export const getDataset = (id: number) => request<DatasetDetail>(`/datasets/${id}`)
-export const updateDataset = (id: number, data: { name?: string; description?: string; system_prompt?: string }) =>
+export const updateDataset = (id: number, data: { name?: string; description?: string; system_prompt?: string; agent_id?: number | null }) =>
   request<Dataset>(`/datasets/${id}`, { method: "PATCH", body: JSON.stringify(data) })
+export const syncDatasetPrompt = (id: number) =>
+  request<Dataset>(`/datasets/${id}/sync-prompt`, { method: "POST" })
 export const deleteDataset = (id: number) => request<void>(`/datasets/${id}`, { method: "DELETE" })
 export const deleteDatasetRecord = (datasetId: number, recordId: number) =>
   request<void>(`/datasets/${datasetId}/records/${recordId}`, { method: "DELETE" })
@@ -351,10 +416,52 @@ export const createDatasetEvaluation = (datasetId: number, profileId: number) =>
   })
 
 // --- Imports ---
+export type EvaluationSummary = {
+  id: number
+  eval_type: "run" | "dataset"
+  agent_id?: number | null
+  agent_name?: string | null
+  dataset_id?: number | null
+  dataset_name?: string | null
+  profile_id: number
+  profile_name?: string | null
+  source_run_id?: number | null
+  source_eval_id?: number | null
+  status: "pending" | "running" | "completed" | "failed" | "cancelled"
+  overall_score?: number | null
+  created_at: string
+  completed_at?: string | null
+}
+
+export type EvaluationComparison = {
+  eval_a: { id: number; eval_type: string; name: string; profile_name: string; score?: number | null; created_at: string; total_items: number }
+  eval_b: { id: number; eval_type: string; name: string; profile_name: string; score?: number | null; created_at: string; total_items: number }
+  metric_comparison: { metric: string; score_a?: number | null; score_b?: number | null; delta?: number | null }[]
+  items?: {
+    item_id: number
+    label: string
+    input_preview: string
+    status_a: string
+    status_b: string
+    regression: boolean
+    improvement: boolean
+    scores_a: Record<string, number>
+    scores_b: Record<string, number>
+  }[] | null
+  can_compare_items: boolean
+  summary: {
+    regressions: number
+    improvements: number
+    unchanged: number
+    score_delta?: number | null
+  }
+}
+
 export type MappingRequest = {
   dataset_name?: string
   dataset_description?: string
   dataset_system_prompt?: string
+  agent_id?: number | null
   file_ids: string[]
   input_path: string
   output_path?: string
@@ -420,18 +527,6 @@ export const appendToDataset = (data: AppendRequest) =>
   request<{ dataset_id: number; appended: number }>("/imports/append", { method: "POST", body: JSON.stringify(data) })
 
 // --- Analytics ---
-export type DatasetEvaluationSummary = {
-  id: number
-  dataset_id: number
-  dataset_name: string
-  profile_id: number
-  profile_name: string
-  status: "pending" | "running" | "completed" | "failed"
-  overall_score?: number | null
-  created_at: string
-  completed_at?: string | null
-}
-
 export type TimelinePoint = {
   id: number
   type: "run" | "dataset_eval"
@@ -441,6 +536,7 @@ export type TimelinePoint = {
   total: number
   passed: number
   profile_id: number
+  dataset_name?: string
 }
 
 export type TimelineData = {
@@ -450,6 +546,7 @@ export type TimelineData = {
   dataset_name?: string
   points: TimelinePoint[]
   profile_names: Record<number, string>
+  linked_datasets?: { id: number; name: string }[]
 }
 
 export const getAgentTimeline = (agentId: number) =>
@@ -458,10 +555,20 @@ export const getDatasetTimeline = (datasetId: number) =>
   request<TimelineData>(`/analytics/timeline/datasets/${datasetId}`)
 
 export const getAnalyticsOverview = () => request<AnalyticsOverview>("/analytics/overview")
-export const getAllDatasetEvaluations = () => request<DatasetEvaluationSummary[]>("/analytics/dataset-evaluations")
 export const getRunBreakdown = (runId: number) => request<RunBreakdown>(`/analytics/runs/${runId}/breakdown`)
 export const compareRuns = (runIdA: number, runIdB: number) =>
   request<RunComparison>("/analytics/runs/compare", {
     method: "POST",
     body: JSON.stringify({ run_id_a: runIdA, run_id_b: runIdB }),
+  })
+
+// --- Evaluations (unified) ---
+export const getEvaluations = (params?: { eval_type?: string; agent_id?: number; dataset_id?: number }) => {
+  const qs = params ? "?" + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])).toString() : ""
+  return request<EvaluationSummary[]>(`/evaluations/${qs}`)
+}
+export const compareEvaluations = (evalIdA: number, evalIdB: number) =>
+  request<EvaluationComparison>("/evaluations/compare", {
+    method: "POST",
+    body: JSON.stringify({ eval_id_a: evalIdA, eval_id_b: evalIdB }),
   })

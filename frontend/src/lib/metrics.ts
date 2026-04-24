@@ -77,12 +77,37 @@ const METRIC_MAP: Record<string, MetricInfo> = {
   },
 }
 
-export function getMetricInfo(key: string): MetricInfo {
+// Nomes amigáveis dos presets de guardrail
+const GUARDRAIL_PRESET_NAMES: Record<string, string> = {
+  racism_hate: "Racismo e Ódio",
+  politics: "Conteúdo Político",
+  violence: "Violência",
+  explicit_content: "Conteúdo Explícito",
+  financial_advice: "Conselho Financeiro",
+  medical_advice: "Conselho Médico",
+  personal_data: "Dados Pessoais (PII)",
+  prompt_injection: "Prompt Injection",
+}
+
+export function getMetricInfo(key: string, guardrailNames?: Record<string, string>): MetricInfo {
   if (METRIC_MAP[key]) return METRIC_MAP[key]
   if (key.startsWith("criterion_")) {
     const idx = Number(key.replace("criterion_", ""))
     const n = isNaN(idx) ? key : idx + 1
     return { label: `Critério ${n}`, shortLabel: `Crit. ${n}`, invertScore: false, description: "" }
+  }
+  if (key.startsWith("guardrail_input_") || key.startsWith("guardrail_output_")) {
+    const isInput = key.startsWith("guardrail_input_")
+    const suffix = isInput ? key.replace("guardrail_input_", "") : key.replace("guardrail_output_", "")
+    const direction = isInput ? "entrada" : "saída"
+    // Tenta resolver nome do guardrail
+    const name = guardrailNames?.[suffix] || GUARDRAIL_PRESET_NAMES[suffix] || suffix
+    return {
+      label: `Guardrail: ${name} (${direction})`,
+      shortLabel: `G: ${name.split(" ")[0]}`,
+      invertScore: true,  // lower-is-better: score 0=violou → invertido para 100%=ok
+      description: `Verifica se a ${direction} respeita a regra de guardrail: ${name}.`,
+    }
   }
   return { label: key, shortLabel: key, invertScore: false, description: "" }
 }

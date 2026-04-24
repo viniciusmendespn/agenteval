@@ -5,11 +5,24 @@ from sqlalchemy.orm import Session
 from ..database import SessionLocal
 from ..models import (
     Agent, EvaluationProfile, TestCase, TestRun, TestResult,
-    Dataset, DatasetRecord, DatasetEvaluation, DatasetResult,
+    Dataset, DatasetRecord, DatasetEvaluation, DatasetResult, Evaluation, Guardrail,
 )
 from ..services.agent_caller import call_agent
 from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
 from ..services.judge_llm import resolve_judge
+
+
+def _sync_evaluation(db, *, source_run_id=None, source_eval_id=None, status, overall_score, completed_at):
+    cond = (
+        Evaluation.source_run_id == source_run_id if source_run_id is not None
+        else Evaluation.source_eval_id == source_eval_id
+    )
+    ev = db.query(Evaluation).filter(cond).first()
+    if ev:
+        ev.status = status
+        ev.overall_score = overall_score
+        ev.completed_at = completed_at
+        db.commit()
 
 
 # ── Runs ──────────────────────────────────────────────────────────────────────
@@ -25,6 +38,7 @@ def execute_run_core(run_id: int):
         ordered = [tc_map[i] for i in run.test_case_ids if i in tc_map]
 
         judge_override = resolve_judge(db, getattr(profile, "llm_provider_id", None))
+        guardrails = _load_guardrails(db, profile)
 
         all_scores: list[float] = []
         cancelled = False
@@ -33,7 +47,7 @@ def execute_run_core(run_id: int):
             if db.get(TestRun, run_id).status == "cancelled":
                 cancelled = True
                 break
-            result = _evaluate_case(run_id, tc, agent, profile, judge_override=judge_override)
+            result = _evaluate_case(run_id, tc, agent, profile, judge_override=judge_override, guardrails=guardrails)
             if result.scores:
                 for metric_name, score in result.scores.items():
                     normalized = (1.0 - score) if metric_name in LOWER_IS_BETTER else score
@@ -47,20 +61,25 @@ def execute_run_core(run_id: int):
         run.completed_at = datetime.utcnow()
         db.commit()
 
+        _sync_evaluation(db, source_run_id=run_id,
+                         status=run.status, overall_score=run.overall_score, completed_at=run.completed_at)
+
     except Exception:
         try:
             run = db.get(TestRun, run_id)
             if run:
                 run.status = "failed"
                 db.commit()
+            _sync_evaluation(db, source_run_id=run_id,
+                             status="failed", overall_score=None, completed_at=datetime.utcnow())
         except Exception:
             pass
     finally:
         db.close()
 
 
-def _build_thresholds(profile: EvaluationProfile) -> dict:
-    return {
+def _build_thresholds(profile: EvaluationProfile, guardrails: list[dict] | None = None) -> dict:
+    base = {
         "relevancy":         profile.relevancy_threshold,
         "hallucination":     profile.hallucination_threshold,
         "toxicity":          getattr(profile, "toxicity_threshold", 0.5),
@@ -72,9 +91,48 @@ def _build_thresholds(profile: EvaluationProfile) -> dict:
         "prompt_alignment":  getattr(profile, "prompt_alignment_threshold", 0.5),
         **{f"criterion_{i}": 0.5 for i in range(len(profile.criteria or []))},
     }
+    for g in (guardrails or []):
+        key = g.get("preset_key") or str(g.get("id", "custom"))
+        mode = g.get("mode", "both")
+        if mode in ("input", "both"):
+            base[f"guardrail_input_{key}"] = 0.5
+        if mode in ("output", "both"):
+            base[f"guardrail_output_{key}"] = 0.5
+    return base
 
 
-def _call_evaluate(input_text, actual_output, expected_output, context, response_time_ms, profile, system_prompt=None, judge_override=None):
+def _load_guardrails(db, profile: EvaluationProfile) -> list[dict]:
+    """Carrega os guardrails ativos no perfil como lista de dicts."""
+    ids = getattr(profile, "guardrail_ids", None) or []
+    if not ids:
+        return []
+    rows = db.query(Guardrail).filter(Guardrail.id.in_(ids)).all()
+    return [
+        {
+            "id": g.id,
+            "name": g.name,
+            "preset_key": g.preset_key,
+            "mode": g.mode,
+            "criterion": g.criterion,
+        }
+        for g in rows
+    ]
+
+
+def _agent_metadata_snapshot(agent: Agent) -> dict:
+    """Captura os metadados do agente no momento da execução."""
+    return {
+        "model_provider": getattr(agent, "model_provider", None),
+        "model_name": getattr(agent, "model_name", None),
+        "temperature": getattr(agent, "temperature", None),
+        "max_tokens": getattr(agent, "max_tokens", None),
+        "environment": getattr(agent, "environment", None),
+        "tags": getattr(agent, "tags", None) or [],
+        "extra_metadata": getattr(agent, "extra_metadata", None) or {},
+    }
+
+
+def _call_evaluate(input_text, actual_output, expected_output, context, response_time_ms, profile, system_prompt=None, judge_override=None, guardrails=None):
     return evaluate_response(
         input_text=input_text,
         actual_output=actual_output,
@@ -103,11 +161,12 @@ def _call_evaluate(input_text, actual_output, expected_output, context, response
         use_prompt_alignment=getattr(profile, "use_prompt_alignment", False),
         prompt_alignment_threshold=getattr(profile, "prompt_alignment_threshold", 0.5),
         system_prompt=system_prompt,
+        guardrails=guardrails,
         judge_override=judge_override,
     )
 
 
-def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationProfile, judge_override=None) -> TestResult:
+def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationProfile, judge_override=None, guardrails=None) -> TestResult:
     session_id = str(uuid.uuid4())
     turns = tc.turns if (tc.turns and len(tc.turns) > 0) else None
 
@@ -130,8 +189,8 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
                 system_prompt=agent.system_prompt or "",
             )
             response_time_ms = (time.time() - t0) * 1000
-            scores, reasons = _call_evaluate(tc.input, actual_output, tc.expected_output, tc.context, response_time_ms, profile, system_prompt=agent.system_prompt, judge_override=judge_override)
-            thresholds = _build_thresholds(profile)
+            scores, reasons = _call_evaluate(tc.input, actual_output, tc.expected_output, tc.context, response_time_ms, profile, system_prompt=agent.system_prompt, judge_override=judge_override, guardrails=guardrails)
+            thresholds = _build_thresholds(profile, guardrails)
             passed = compute_passed(scores, thresholds) if scores else True
             return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=actual_output,
                               scores=scores, reasons=reasons, passed=passed, turns_executed=1)
@@ -168,8 +227,8 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
                 last_input = turn["input"]
                 last_expected = turn.get("expected_output")
 
-            scores, reasons = _call_evaluate(last_input, last_output, last_expected, tc.context, total_time_ms, profile, system_prompt=agent.system_prompt, judge_override=judge_override)
-            thresholds = _build_thresholds(profile)
+            scores, reasons = _call_evaluate(last_input, last_output, last_expected, tc.context, total_time_ms, profile, system_prompt=agent.system_prompt, judge_override=judge_override, guardrails=guardrails)
+            thresholds = _build_thresholds(profile, guardrails)
             passed = compute_passed(scores, thresholds) if scores else True
             return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=last_output,
                               scores=scores, reasons=reasons, passed=passed,
@@ -195,10 +254,11 @@ def execute_evaluation_core(eval_id: int):
 
         dataset_system_prompt = getattr(dataset, "system_prompt", None)
         judge_override = resolve_judge(db, getattr(profile, "llm_provider_id", None))
+        guardrails = _load_guardrails(db, profile)
 
         all_scores: list[float] = []
         for record in records:
-            result = _evaluate_record(eval_id, record, profile, system_prompt=dataset_system_prompt, judge_override=judge_override)
+            result = _evaluate_record(eval_id, record, profile, system_prompt=dataset_system_prompt, judge_override=judge_override, guardrails=guardrails)
             if result.scores:
                 for metric_name, score in result.scores.items():
                     normalized = (1.0 - score) if metric_name in LOWER_IS_BETTER else score
@@ -211,62 +271,33 @@ def execute_evaluation_core(eval_id: int):
         ev.completed_at = datetime.utcnow()
         db.commit()
 
+        _sync_evaluation(db, source_eval_id=eval_id,
+                         status=ev.status, overall_score=ev.overall_score, completed_at=ev.completed_at)
+
     except Exception:
         try:
             ev = db.get(DatasetEvaluation, eval_id)
             if ev:
                 ev.status = "failed"
                 db.commit()
+            _sync_evaluation(db, source_eval_id=eval_id,
+                             status="failed", overall_score=None, completed_at=datetime.utcnow())
         except Exception:
             pass
     finally:
         db.close()
 
 
-def _evaluate_record(eval_id: int, record: DatasetRecord, profile: EvaluationProfile, system_prompt=None, judge_override=None) -> DatasetResult:
+def _evaluate_record(eval_id: int, record: DatasetRecord, profile: EvaluationProfile, system_prompt=None, judge_override=None, guardrails=None) -> DatasetResult:
     try:
         if not record.actual_output:
             raise ValueError("Registro sem resposta — não é possível avaliar")
 
-        scores, reasons = evaluate_response(
-            input_text=record.input,
-            actual_output=record.actual_output,
-            expected_output=None,
-            context=record.context,
-            use_relevancy=profile.use_relevancy,
-            relevancy_threshold=profile.relevancy_threshold,
-            use_hallucination=profile.use_hallucination,
-            hallucination_threshold=profile.hallucination_threshold,
-            use_toxicity=getattr(profile, "use_toxicity", False),
-            toxicity_threshold=getattr(profile, "toxicity_threshold", 0.5),
-            use_bias=getattr(profile, "use_bias", False),
-            bias_threshold=getattr(profile, "bias_threshold", 0.5),
-            use_faithfulness=getattr(profile, "use_faithfulness", False),
-            faithfulness_threshold=getattr(profile, "faithfulness_threshold", 0.5),
-            criteria=profile.criteria or [],
-            use_non_advice=getattr(profile, "use_non_advice", False),
-            non_advice_threshold=getattr(profile, "non_advice_threshold", 0.5),
-            non_advice_types=getattr(profile, "non_advice_types", None) or [],
-            use_role_violation=getattr(profile, "use_role_violation", False),
-            role_violation_threshold=getattr(profile, "role_violation_threshold", 0.5),
-            role_violation_role=getattr(profile, "role_violation_role", None) or "",
-            use_prompt_alignment=getattr(profile, "use_prompt_alignment", False),
-            prompt_alignment_threshold=getattr(profile, "prompt_alignment_threshold", 0.5),
-            system_prompt=system_prompt,
-            judge_override=judge_override,
+        scores, reasons = _call_evaluate(
+            record.input, record.actual_output, None, record.context, None,
+            profile, system_prompt=system_prompt, judge_override=judge_override, guardrails=guardrails,
         )
-        thresholds = {
-            "relevancy":        profile.relevancy_threshold,
-            "hallucination":    profile.hallucination_threshold,
-            "toxicity":         getattr(profile, "toxicity_threshold", 0.5),
-            "bias":             getattr(profile, "bias_threshold", 0.5),
-            "faithfulness":     getattr(profile, "faithfulness_threshold", 0.5),
-            "latency":          0.5,
-            "non_advice":       getattr(profile, "non_advice_threshold", 0.5),
-            "role_violation":   getattr(profile, "role_violation_threshold", 0.5),
-            "prompt_alignment": getattr(profile, "prompt_alignment_threshold", 0.5),
-            **{f"criterion_{i}": 0.5 for i in range(len(profile.criteria or []))},
-        }
+        thresholds = _build_thresholds(profile, guardrails)
         passed = compute_passed(scores, thresholds) if scores else True
         return DatasetResult(evaluation_id=eval_id, record_id=record.id, scores=scores, reasons=reasons, passed=passed)
     except Exception as e:

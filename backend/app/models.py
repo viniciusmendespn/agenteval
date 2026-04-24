@@ -21,6 +21,14 @@ class Agent(Base):
     token_request_body = Column(Text, nullable=True)
     token_output_field = Column(String, nullable=True)
     token_header_name = Column(String, nullable=True)
+    # Metadados para comparação de configurações
+    model_provider = Column(String, nullable=True, default="custom")
+    model_name = Column(String, nullable=True)
+    temperature = Column(Float, nullable=True)
+    max_tokens = Column(Integer, nullable=True)
+    environment = Column(String, nullable=True, default="experiment")
+    tags = Column(JSON, nullable=True, default=list)
+    extra_metadata = Column(JSON, nullable=True, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -80,6 +88,7 @@ class EvaluationProfile(Base):
     use_prompt_alignment = Column(Boolean, default=False)
     prompt_alignment_threshold = Column(Float, default=0.5)
     llm_provider_id = Column(Integer, ForeignKey("llm_providers.id"), nullable=True)
+    guardrail_ids = Column(JSON, default=list)   # IDs de Guardrail ativos neste perfil
     created_at = Column(DateTime, default=datetime.utcnow)
 
     llm_provider = relationship("LLMProvider")
@@ -90,12 +99,14 @@ class TestRun(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
+    name = Column(String, nullable=True)
     agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
     profile_id = Column(Integer, ForeignKey("evaluation_profiles.id"), nullable=False)
     test_case_ids = Column(JSON, nullable=False)
     status = Column(String, default="pending")
     overall_score = Column(Float, nullable=True)
     task_id = Column(String, nullable=True)
+    agent_metadata_snapshot = Column(JSON, nullable=True)   # snapshot da config do agente no momento do run
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 
@@ -135,8 +146,10 @@ class Dataset(Base):
     name = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     system_prompt = Column(Text, nullable=True)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+    agent = relationship("Agent")
     records = relationship("DatasetRecord", back_populates="dataset", cascade="all, delete-orphan")
     evaluations = relationship("DatasetEvaluation", back_populates="dataset", cascade="all, delete-orphan")
 
@@ -161,10 +174,12 @@ class DatasetEvaluation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
+    name = Column(String, nullable=True)
     dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=False)
     profile_id = Column(Integer, ForeignKey("evaluation_profiles.id"), nullable=False)
     status = Column(String, default="pending")
     overall_score = Column(Float, nullable=True)
+    agent_metadata_snapshot = Column(JSON, nullable=True)   # snapshot da config do agente (quando disponível)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 
@@ -187,6 +202,63 @@ class DatasetResult(Base):
 
     evaluation = relationship("DatasetEvaluation", back_populates="results")
     record = relationship("DatasetRecord")
+
+
+class Evaluation(Base):
+    """Modelo unificado que espelha TestRun e DatasetEvaluation para analytics e comparação cross-type."""
+    __tablename__ = "evaluations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
+    name = Column(String, nullable=True)
+    profile_id = Column(Integer, ForeignKey("evaluation_profiles.id"), nullable=False)
+    eval_type = Column(String, nullable=False)  # "run" | "dataset"
+
+    # Referências para as tabelas originais (para buscar resultados)
+    source_run_id = Column(Integer, nullable=True, index=True)   # test_runs.id
+    source_eval_id = Column(Integer, nullable=True, index=True)  # dataset_evaluations.id
+
+    # Denormalizados para queries de timeline e filtros
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True, index=True)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True, index=True)
+
+    status = Column(String, default="pending")
+    overall_score = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    profile = relationship("EvaluationProfile")
+    agent = relationship("Agent")
+    dataset = relationship("Dataset")
+
+
+class AgentPromptVersion(Base):
+    """Histórico de versões do system_prompt de um agente."""
+    __tablename__ = "agent_prompt_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1)
+    system_prompt = Column(Text, nullable=False)
+    version_num = Column(Integer, nullable=False, default=1)
+    status = Column(String, default="active")   # "draft" | "active" | "archived"
+    label = Column(String, nullable=True)        # nome amigável opcional
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Guardrail(Base):
+    """Regra de conteúdo (entrada/saída) avaliada via GEval."""
+    __tablename__ = "guardrails"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    mode = Column(String, nullable=False, default="both")   # "input" | "output" | "both"
+    criterion = Column(Text, nullable=False)                 # texto GEval
+    preset_key = Column(String, nullable=True)               # ex: "racism_hate"; None = custom
+    is_system = Column(Boolean, default=False)               # True = preset global
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class User(Base):

@@ -4,17 +4,22 @@ from deepeval.metrics import AnswerRelevancyMetric, HallucinationMetric, GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 # Métricas onde score menor = melhor (ausência do problema)
 LOWER_IS_BETTER = {"hallucination", "toxicity", "bias", "role_violation", "non_advice"}
+GUARDRAIL_METRIC_PREFIX = "guardrail_"
+
+
+def _is_lower_is_better(metric: str) -> bool:
+    return metric in LOWER_IS_BETTER or metric.startswith(GUARDRAIL_METRIC_PREFIX)
 
 
 def compute_passed(scores: dict[str, float], thresholds: dict[str, float]) -> bool:
     """
     Verifica se todos os scores passam no threshold respeitando a direção de cada métrica.
-    LOWER_IS_BETTER: score <= threshold → aprovado
-    Demais:          score >= threshold → aprovado
+    LOWER_IS_BETTER (incluindo guardrail_*): score <= threshold → aprovado
+    Demais: score >= threshold → aprovado
     """
     for metric, score in scores.items():
         threshold = thresholds.get(metric, 0.5)
-        if metric in LOWER_IS_BETTER:
+        if _is_lower_is_better(metric):
             if score > threshold:
                 return False
         else:
@@ -130,6 +135,9 @@ def evaluate_response(
     use_prompt_alignment: bool = False,
     prompt_alignment_threshold: float = 0.5,
     system_prompt: str | None = None,
+    # guardrails de conteúdo (lista de dicts com keys: id, preset_key, name, mode, criterion)
+    guardrails: list[dict] | None = None,
+    guardrail_threshold: float = 0.5,
     # LLM judge override (instância CustomJudgeLLM ou None)
     judge_override=None,
 ) -> tuple[dict[str, float], dict[str, str]]:
@@ -251,6 +259,51 @@ def evaluate_response(
         reasons["prompt_alignment"] = "PromptAlignment requer system prompt cadastrado no agente ou dataset"
     elif use_prompt_alignment and not _HAS_PROMPT_ALIGNMENT:
         reasons["prompt_alignment"] = "PromptAlignmentMetric não disponível nesta versão do DeepEval"
+
+    # Guardrails via GEval — score 0=violou, 1=ok (lower-is-better)
+    for guardrail in (guardrails or []):
+        key = guardrail.get("preset_key") or str(guardrail.get("id", "custom"))
+        mode = guardrail.get("mode", "both")
+        criterion = guardrail.get("criterion", "")
+        name = guardrail.get("name", key)
+
+        if mode in ("input", "both"):
+            metric_key = f"guardrail_input_{key}"
+            input_tc = LLMTestCase(
+                input=input_text,
+                actual_output=input_text,  # avalia o próprio input
+            )
+            geval = GEval(
+                name=metric_key,
+                criteria=f"The user input {criterion}. Score 1.0 if the rule is followed, 0.0 if violated.",
+                evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+                model=judge,
+            )
+            try:
+                geval.measure(input_tc)
+                scores[metric_key] = round(1.0 - (geval.score or 0.0), 4)  # inverter: 0=ok, 1=violou
+                reasons[metric_key] = geval.reason or ""
+            except Exception as e:
+                reasons[metric_key] = f"Erro ao avaliar guardrail '{name}' (entrada): {e}"
+
+        if mode in ("output", "both"):
+            metric_key = f"guardrail_output_{key}"
+            output_tc = LLMTestCase(
+                input=input_text,
+                actual_output=actual_output,
+            )
+            geval = GEval(
+                name=metric_key,
+                criteria=f"The assistant response {criterion}. Score 1.0 if the rule is followed, 0.0 if violated.",
+                evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
+                model=judge,
+            )
+            try:
+                geval.measure(output_tc)
+                scores[metric_key] = round(1.0 - (geval.score or 0.0), 4)  # inverter: 0=ok, 1=violou
+                reasons[metric_key] = geval.reason or ""
+            except Exception as e:
+                reasons[metric_key] = f"Erro ao avaliar guardrail '{name}' (saída): {e}"
 
     reasons = _translate_reasons(reasons, judge)
     return scores, reasons

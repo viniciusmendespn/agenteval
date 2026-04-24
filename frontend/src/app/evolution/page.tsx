@@ -12,6 +12,36 @@ import {
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
+function TypeDot(props: any) {
+  const { cx, cy, fill, stroke, payload } = props
+  if (payload?.point_type === "dataset_eval") {
+    const size = 5
+    return (
+      <polygon
+        points={`${cx},${cy - size} ${cx + size},${cy} ${cx},${cy + size} ${cx - size},${cy}`}
+        fill={fill || stroke}
+      />
+    )
+  }
+  return <circle cx={cx} cy={cy} r={4} fill={fill || stroke} />
+}
+
+function ActiveTypeDot(props: any) {
+  const { cx, cy, fill, stroke, payload } = props
+  if (payload?.point_type === "dataset_eval") {
+    const size = 7
+    return (
+      <polygon
+        points={`${cx},${cy - size} ${cx + size},${cy} ${cx},${cy + size} ${cx - size},${cy}`}
+        fill={fill || stroke}
+        stroke="white"
+        strokeWidth={2}
+      />
+    )
+  }
+  return <circle cx={cx} cy={cy} r={6} fill={fill || stroke} stroke="white" strokeWidth={2} />
+}
+
 const CHART_COLORS = [
   "#ec0000", "#10b981", "#f59e0b", "#6b7280", "#8b5cf6",
   "#06b6d4", "#db2777", "#84cc16",
@@ -26,6 +56,8 @@ export default function EvolutionPage() {
   const [timeline, setTimeline] = useState<TimelineData | null>(null)
   const [loading, setLoading] = useState(false)
   const [visibleMetrics, setVisibleMetrics] = useState<Set<string>>(new Set())
+  const [showRuns, setShowRuns] = useState(true)
+  const [showDatasetEvals, setShowDatasetEvals] = useState(true)
   // mapa criterion_N → texto real do critério (coletado dos perfis usados na timeline)
   const [criteriaMap, setCriteriaMap] = useState<Record<string, string>>({})
 
@@ -72,39 +104,49 @@ export default function EvolutionPage() {
     return Array.from(set)
   }, [timeline])
 
-  // Dados para o gráfico de linhas
+  const hasBothTypes = useMemo(() => {
+    if (!timeline) return false
+    const types = new Set(timeline.points.map(p => p.type))
+    return types.has("run") && types.has("dataset_eval")
+  }, [timeline])
+
+  // Dados para o gráfico de linhas — filtrados por tipo se necessário
   const chartData = useMemo(() => {
     if (!timeline) return []
-    return timeline.points.map((p, idx) => {
-      const row: Record<string, unknown> = {
-        name: p.type === "run" ? `Run #${p.id}` : `Aval #${p.id}`,
-        date: new Date(p.date).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
-        overall: p.overall_score != null ? Math.round(p.overall_score * 100) : null,
-        passed: p.passed,
-        total: p.total,
-        profile: timeline.profile_names[p.profile_id] ?? `Perfil #${p.profile_id}`,
-        idx,
-      }
-      for (const m of allMetrics) {
-        // Já vem normalizado do backend (100 = ótimo)
-        row[m] = p.metrics[m] != null ? Math.round(p.metrics[m] * 100) : null
-      }
-      return row
-    })
-  }, [timeline, allMetrics])
+    return timeline.points
+      .filter(p => (p.type === "run" ? showRuns : showDatasetEvals))
+      .map((p, idx) => {
+        const row: Record<string, unknown> = {
+          name: p.type === "run" ? `Run #${p.id}` : `Aval #${p.id}`,
+          date: new Date(p.date).toLocaleString("pt-BR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
+          overall: p.overall_score != null ? Math.round(p.overall_score * 100) : null,
+          passed: p.passed,
+          total: p.total,
+          profile: timeline.profile_names[p.profile_id] ?? `Perfil #${p.profile_id}`,
+          point_type: p.type,
+          dataset_name: p.dataset_name ?? null,
+          idx,
+        }
+        for (const m of allMetrics) {
+          row[m] = p.metrics[m] != null ? Math.round(p.metrics[m] * 100) : null
+        }
+        return row
+      })
+  }, [timeline, allMetrics, showRuns, showDatasetEvals])
 
-  // Delta entre primeiro e último ponto
+  // Delta entre primeiro e último ponto (considera só os pontos visíveis)
   const deltas = useMemo(() => {
-    if (!timeline || timeline.points.length < 2) return null
-    const first = timeline.points[0]
-    const last = timeline.points[timeline.points.length - 1]
+    if (chartData.length < 2) return null
+    const first = timeline?.points.find(p => (p.type === "run" ? showRuns : showDatasetEvals))
+    const last = timeline?.points.filter(p => (p.type === "run" ? showRuns : showDatasetEvals)).at(-1)
+    if (!first || !last) return null
     const overallDelta = (last.overall_score ?? 0) - (first.overall_score ?? 0)
     const metricDeltas: Record<string, number> = {}
     for (const m of allMetrics) {
       metricDeltas[m] = (last.metrics[m] ?? 0) - (first.metrics[m] ?? 0)
     }
     return { overall: overallDelta, metrics: metricDeltas }
-  }, [timeline, allMetrics])
+  }, [timeline, allMetrics, chartData, showRuns, showDatasetEvals])
 
   function toggleMetric(m: string) {
     setVisibleMetrics(prev => {
@@ -215,6 +257,40 @@ export default function EvolutionPage() {
             )}
           </div>
 
+          {/* Filtro de tipos (run vs dataset_eval) */}
+          {hasBothTypes && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-6 flex-wrap">
+              <span className="text-xs font-medium text-gray-500">Exibir:</span>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showRuns}
+                  onChange={e => setShowRuns(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-xs text-gray-700 flex items-center gap-1">
+                  <span className="inline-block w-3 h-3 rounded-full bg-red-500" />
+                  Execuções (run)
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showDatasetEvals}
+                  onChange={e => setShowDatasetEvals(e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <span className="text-xs text-gray-700 flex items-center gap-1">
+                  <svg width="12" height="12" viewBox="0 0 12 12"><polygon points="6,0 12,6 6,12 0,6" fill="#10b981" /></svg>
+                  Avaliações de Dataset
+                </span>
+              </label>
+              <div className="ml-auto text-xs text-gray-400">
+                ● círculo = execução &nbsp;·&nbsp; ◆ losango = avaliação de dataset
+              </div>
+            </div>
+          )}
+
           {/* Filtro de métricas */}
           <div className="bg-white rounded-xl border border-gray-200 p-4">
             <div className="flex items-center gap-2 flex-wrap">
@@ -277,7 +353,10 @@ export default function EvolutionPage() {
                   labelFormatter={(label, payload) => {
                     if (payload?.[0]?.payload) {
                       const p = payload[0].payload
-                      return `${p.name} — ${label} — ${p.profile}`
+                      const typeLabel = p.point_type === "dataset_eval"
+                        ? `Dataset${p.dataset_name ? `: ${p.dataset_name}` : ""}`
+                        : "Execução"
+                      return `${p.name} — ${label} — ${p.profile} [${typeLabel}]`
                     }
                     return label
                   }}
@@ -296,8 +375,8 @@ export default function EvolutionPage() {
                       dataKey={m}
                       stroke={CHART_COLORS[i % CHART_COLORS.length]}
                       strokeWidth={2}
-                      dot={{ r: 4 }}
-                      activeDot={{ r: 6 }}
+                      dot={hasBothTypes ? <TypeDot fill={CHART_COLORS[i % CHART_COLORS.length]} /> : { r: 4 }}
+                      activeDot={hasBothTypes ? <ActiveTypeDot fill={CHART_COLORS[i % CHART_COLORS.length]} /> : { r: 6 }}
                       connectNulls
                     />
                   ) : null
@@ -320,7 +399,10 @@ export default function EvolutionPage() {
                   labelFormatter={(label, payload) => {
                     if (payload?.[0]?.payload) {
                       const p = payload[0].payload
-                      return `${p.name} — ${label}`
+                      const typeLabel = p.point_type === "dataset_eval"
+                        ? `Dataset${p.dataset_name ? `: ${p.dataset_name}` : ""}`
+                        : "Execução"
+                      return `${p.name} — ${label} [${typeLabel}]`
                     }
                     return label
                   }}
@@ -330,8 +412,8 @@ export default function EvolutionPage() {
                   dataKey="overall"
                   stroke="#ec0000"
                   strokeWidth={2.5}
-                  dot={{ r: 5, fill: "#ec0000" }}
-                  activeDot={{ r: 7 }}
+                  dot={hasBothTypes ? <TypeDot fill="#ec0000" /> : { r: 5, fill: "#ec0000" }}
+                  activeDot={hasBothTypes ? <ActiveTypeDot fill="#ec0000" /> : { r: 7 }}
                   connectNulls
                 />
               </LineChart>
@@ -348,6 +430,9 @@ export default function EvolutionPage() {
               <thead className="bg-gray-50 border-b border-gray-100">
                 <tr>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Avaliação</th>
+                  {hasBothTypes && (
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Tipo</th>
+                  )}
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Data</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Perfil</th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Score</th>
@@ -365,11 +450,14 @@ export default function EvolutionPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {timeline.points.map((p, idx) => {
-                  const prev = idx > 0 ? timeline.points[idx - 1] : null
+                {timeline.points
+                  .filter(p => (p.type === "run" ? showRuns : showDatasetEvals))
+                  .map((p, idx, arr) => {
+                  const prev = idx > 0 ? arr[idx - 1] : null
                   const scoreDelta = prev && p.overall_score != null && prev.overall_score != null
                     ? p.overall_score - prev.overall_score
                     : null
+                  const dsName = p.dataset_name
 
                   return (
                     <tr key={`${p.type}-${p.id}`} className="hover:bg-gray-50/50">
@@ -378,10 +466,23 @@ export default function EvolutionPage() {
                           <a href={`/runs/${p.id}`} className="text-blue-600 hover:underline">
                             Run #{p.id}
                           </a>
+                        ) : dsName ? (
+                          <span className="text-gray-700">Aval #{p.id}</span>
                         ) : (
                           `Aval #${p.id}`
                         )}
                       </td>
+                      {hasBothTypes && (
+                        <td className="px-4 py-3">
+                          {p.type === "run" ? (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">Execução</span>
+                          ) : (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-medium">
+                              {dsName ? dsName : "Dataset"}
+                            </span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-gray-600">
                         {new Date(p.date).toLocaleDateString("pt-BR", {
                           day: "2-digit", month: "2-digit", year: "numeric",

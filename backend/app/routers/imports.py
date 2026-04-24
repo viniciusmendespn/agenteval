@@ -25,6 +25,7 @@ class MappingRequest(BaseModel):
     dataset_name: str
     dataset_description: Optional[str] = None
     dataset_system_prompt: Optional[str] = None
+    agent_id: Optional[int] = None         # agente vinculado: copia system_prompt se não informado
     file_ids: list[str]
     input_path: str
     output_path: Optional[str] = None
@@ -126,10 +127,19 @@ def confirm_import(
     if not data.file_ids:
         raise HTTPException(400, "Nenhum arquivo informado")
 
+    # Se agent_id fornecido e system_prompt não, copiar do agente
+    system_prompt = data.dataset_system_prompt
+    if data.agent_id and not system_prompt:
+        from ..models import Agent as _Agent
+        agent = db.get(_Agent, data.agent_id)
+        if agent and agent.system_prompt:
+            system_prompt = agent.system_prompt
+
     ds = Dataset(
         name=data.dataset_name,
         description=data.dataset_description,
-        system_prompt=data.dataset_system_prompt,
+        system_prompt=system_prompt,
+        agent_id=data.agent_id,
         workspace_id=workspace.workspace_id,
     )
     db.add(ds)

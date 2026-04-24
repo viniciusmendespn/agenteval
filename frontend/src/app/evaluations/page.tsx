@@ -3,7 +3,8 @@
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { getAllDatasetEvaluations, type DatasetEvaluationSummary } from "@/lib/api"
+import { getEvaluations, type EvaluationSummary } from "@/lib/api"
+import { useRouter } from "next/navigation"
 import { TableSkeleton } from "@/components/Skeleton"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
@@ -30,22 +31,38 @@ function ScoreBadge({ score }: { score?: number | null }) {
 }
 
 export default function EvaluationsPage() {
-  const [evaluations, setEvaluations] = useState<DatasetEvaluationSummary[]>([])
+  const router = useRouter()
+  const [evaluations, setEvaluations] = useState<EvaluationSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [datasetFilter, setDatasetFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [selected, setSelected] = useState<Set<number>>(new Set())
 
   useEffect(() => {
-    getAllDatasetEvaluations()
+    getEvaluations({ eval_type: "dataset" })
       .then(setEvaluations)
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
+  function toggleSelect(id: number) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function handleCompare() {
+    const [a, b] = Array.from(selected)
+    router.push(`/evaluations/compare?a=${a}&b=${b}`)
+  }
+
   const datasets = useMemo(() => {
     const map = new Map<number, string>()
     for (const ev of evaluations) {
-      map.set(ev.dataset_id, ev.dataset_name)
+      if (ev.dataset_id) map.set(ev.dataset_id, ev.dataset_name ?? "")
     }
     return Array.from(map.entries()).sort((a, b) => a[1].localeCompare(b[1]))
   }, [evaluations])
@@ -70,9 +87,16 @@ export default function EvaluationsPage() {
               : `${filtered.length} de ${evaluations.length} avaliação(ões)`}
           </p>
         </div>
-        <Link href="/datasets" className="flame-button-secondary">
-          Gerenciar datasets →
-        </Link>
+        <div className="flex gap-2">
+          {selected.size === 2 && (
+            <button onClick={handleCompare} className="flame-button">
+              Comparar selecionadas
+            </button>
+          )}
+          <Link href="/datasets" className="flame-button-secondary">
+            Gerenciar datasets →
+          </Link>
+        </div>
       </div>
 
       {/* Filtros */}
@@ -137,6 +161,7 @@ export default function EvaluationsPage() {
           <table className="flame-table">
             <thead>
               <tr>
+                <th className="px-3 py-3 w-8"></th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">#</th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Dataset</th>
                 <th className="text-left px-5 py-3 font-medium text-gray-600">Perfil usado</th>
@@ -147,15 +172,32 @@ export default function EvaluationsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filtered.map((ev, i) => (
+              {selected.size > 0 && selected.size !== 2 && (
+                <tr>
+                  <td colSpan={8} className="px-5 py-2 text-xs text-orange-600 bg-orange-50">
+                    Selecione exatamente 2 avaliações para comparar (selecionadas: {selected.size})
+                  </td>
+                </tr>
+              )}
+              {filtered.map((ev, i) => {
+                const isSelected = selected.has(ev.id)
+                return (
                 <motion.tr
                   key={ev.id}
-                  className="hover:bg-gray-50/50"
+                  className={`hover:bg-gray-50/50 ${isSelected ? "bg-blue-50/40" : ""}`}
                   initial={{ opacity: 0, y: 3 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.025, duration: 0.15 }}
                 >
-                  <td className="px-5 py-3 text-gray-400">#{ev.id}</td>
+                  <td className="px-3 py-3">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(ev.id)}
+                      className="rounded border-gray-300"
+                    />
+                  </td>
+                  <td className="px-5 py-3 text-gray-400">#{ev.source_eval_id ?? ev.id}</td>
                   <td className="px-5 py-3 font-medium text-gray-800">{ev.dataset_name}</td>
                   <td className="px-5 py-3 text-gray-500 text-xs">{ev.profile_name}</td>
                   <td className="px-5 py-3">
@@ -169,14 +211,15 @@ export default function EvaluationsPage() {
                   </td>
                   <td className="px-5 py-3">
                     <Link
-                      href={`/datasets/${ev.dataset_id}/evaluations/${ev.id}`}
+                      href={`/datasets/${ev.dataset_id}/evaluations/${ev.source_eval_id}`}
                       className="flame-link-action"
                     >
                       ver resultados
                     </Link>
                   </td>
                 </motion.tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>

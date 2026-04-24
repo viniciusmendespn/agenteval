@@ -188,13 +188,35 @@ export default function RunPage() {
       <Breadcrumb items={[{ label: "Execuções", href: "/runs" }, { label: `Execução #${run.id}` }]} />
 
       {/* Header */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-center gap-6">
+      <div className="bg-white rounded-xl border border-gray-200 p-5 flex items-start gap-6">
         <ScoreCircle score={isRunning ? null : run.overall_score} />
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-1 flex-wrap">
             <h1 className="text-lg font-bold text-gray-900">Execução #{run.id}</h1>
             <StatusBadge status={run.status} />
           </div>
+          {/* Metadados do agente */}
+          {run.agent_metadata_snapshot && (() => {
+            const m = run.agent_metadata_snapshot
+            const hasAny = m.model_name || m.model_provider !== "custom" || m.temperature != null || m.max_tokens != null || m.environment || (m.tags?.length ?? 0) > 0
+            if (!hasAny) return null
+            return (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {m.model_name && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{m.model_name}</span>}
+                {m.model_provider && m.model_provider !== "custom" && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{m.model_provider}</span>}
+                {m.temperature != null && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">temp {m.temperature}</span>}
+                {m.max_tokens != null && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{m.max_tokens} tokens</span>}
+                {m.environment && m.environment !== "experiment" && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full capitalize">{m.environment}</span>}
+                {m.tags?.map(t => <span key={t} className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{t}</span>)}
+                {Object.keys(m.extra_metadata || {}).length > 0 && (
+                  <details className="inline">
+                    <summary className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full cursor-pointer list-none hover:bg-gray-200">+extras</summary>
+                    <pre className="absolute z-10 bg-white border border-gray-200 rounded-lg p-2 text-xs shadow-lg max-w-xs whitespace-pre-wrap mt-1">{JSON.stringify(m.extra_metadata, null, 2)}</pre>
+                  </details>
+                )}
+              </div>
+            )
+          })()}
           <p className="text-sm text-gray-500">
             {isRunning
               ? `${done} de ${total} casos processados...`

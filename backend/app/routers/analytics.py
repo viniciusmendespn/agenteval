@@ -4,50 +4,13 @@ from sqlalchemy import func
 from ..database import get_db
 from ..models import (
     Agent, TestCase, TestRun, TestResult,
-    Dataset, DatasetEvaluation, DatasetResult, DatasetRecord,
-    EvaluationProfile,
+    Dataset, DatasetResult, DatasetRecord,
+    EvaluationProfile, Evaluation,
 )
 from ..services.evaluator import LOWER_IS_BETTER
 from ..workspace import WorkspaceContext, get_current_workspace
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
-
-
-@router.get("/dataset-evaluations")
-def list_all_dataset_evaluations(
-    db: Session = Depends(get_db),
-    workspace: WorkspaceContext = Depends(get_current_workspace),
-):
-    """Lista todas as avaliações de dataset de todos os datasets."""
-    evs = (
-        db.query(DatasetEvaluation)
-        .filter(DatasetEvaluation.workspace_id == workspace.workspace_id)
-        .order_by(DatasetEvaluation.created_at.desc())
-        .all()
-    )
-    dataset_names = {
-        d.id: d.name
-        for d in db.query(Dataset).filter(Dataset.workspace_id == workspace.workspace_id).all()
-    }
-    profile_names = {
-        p.id: p.name
-        for p in db.query(EvaluationProfile).filter(EvaluationProfile.workspace_id == workspace.workspace_id).all()
-    }
-
-    return [
-        {
-            "id": ev.id,
-            "dataset_id": ev.dataset_id,
-            "dataset_name": dataset_names.get(ev.dataset_id, f"Dataset #{ev.dataset_id}"),
-            "profile_id": ev.profile_id,
-            "profile_name": profile_names.get(ev.profile_id, f"Perfil #{ev.profile_id}"),
-            "status": ev.status,
-            "overall_score": ev.overall_score,
-            "created_at": ev.created_at.isoformat() if ev.created_at else None,
-            "completed_at": ev.completed_at.isoformat() if ev.completed_at else None,
-        }
-        for ev in evs
-    ]
 
 
 @router.get("/overview")
@@ -267,6 +230,7 @@ def compare_runs(
             "score": run_a.overall_score,
             "created_at": run_a.created_at.isoformat() if run_a.created_at else None,
             "total_cases": len(run_a.test_case_ids or []),
+            "agent_metadata_snapshot": run_a.agent_metadata_snapshot,
         },
         "run_b": {
             "id": run_b.id,
@@ -274,6 +238,7 @@ def compare_runs(
             "score": run_b.overall_score,
             "created_at": run_b.created_at.isoformat() if run_b.created_at else None,
             "total_cases": len(run_b.test_case_ids or []),
+            "agent_metadata_snapshot": run_b.agent_metadata_snapshot,
         },
         "metric_comparison": metric_comparison,
         "cases": cases,
@@ -288,97 +253,17 @@ def compare_runs(
     }
 
 
-@router.get("/timeline/agents/{agent_id}")
-def agent_timeline(
-    agent_id: int,
-    db: Session = Depends(get_db),
-    workspace: WorkspaceContext = Depends(get_current_workspace),
-):
-    """Timeline de evolução de um agente: todos os runs completos com breakdown de métricas."""
-    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
-    if not agent:
-        raise HTTPException(404, "Agente não encontrado")
-
-    runs = (
-        db.query(TestRun)
-        .filter(
-            TestRun.workspace_id == workspace.workspace_id,
-            TestRun.agent_id == agent_id,
-            TestRun.status == "completed",
-        )
-        .order_by(TestRun.created_at.asc())
-        .all()
-    )
-
-    points = []
-    for run in runs:
-        results = db.query(TestResult).filter(TestResult.run_id == run.id).all()
-        metric_avgs: dict[str, float] = {}
-        for result in results:
-            for metric_name, score in (result.scores or {}).items():
-                metric_avgs.setdefault(metric_name, []).append(score)
-
-        metrics = {}
-        for metric_name, scores_list in metric_avgs.items():
-            raw_avg = sum(scores_list) / len(scores_list)
-            # Normalizar: inverter lower-is-better para que 1.0 = ótimo
-            if metric_name in LOWER_IS_BETTER:
-                metrics[metric_name] = round(1.0 - raw_avg, 4)
-            else:
-                metrics[metric_name] = round(raw_avg, 4)
-
-        total = len(results)
-        passed = sum(1 for r in results if r.passed)
-
-        points.append({
-            "id": run.id,
-            "type": "run",
-            "date": run.created_at.isoformat() if run.created_at else None,
-            "overall_score": run.overall_score,
-            "metrics": metrics,
-            "total": total,
-            "passed": passed,
-            "profile_id": run.profile_id,
-        })
-
-    profile_names = {
-        p.id: p.name
-        for p in db.query(EvaluationProfile).filter(EvaluationProfile.workspace_id == workspace.workspace_id).all()
-    }
-
-    return {
-        "agent_id": agent_id,
-        "agent_name": agent.name,
-        "points": points,
-        "profile_names": profile_names,
-    }
-
-
-@router.get("/timeline/datasets/{dataset_id}")
-def dataset_timeline(
-    dataset_id: int,
-    db: Session = Depends(get_db),
-    workspace: WorkspaceContext = Depends(get_current_workspace),
-):
-    """Timeline de evolução de um dataset: todas as avaliações completas com breakdown de métricas."""
-    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
-    if not ds:
-        raise HTTPException(404, "Dataset não encontrado")
-
-    evals = (
-        db.query(DatasetEvaluation)
-        .filter(
-            DatasetEvaluation.workspace_id == workspace.workspace_id,
-            DatasetEvaluation.dataset_id == dataset_id,
-            DatasetEvaluation.status == "completed",
-        )
-        .order_by(DatasetEvaluation.created_at.asc())
-        .all()
-    )
-
+def _build_timeline_points(evals: list, db: Session) -> list[dict]:
+    """Constrói pontos de timeline a partir de registros Evaluation (unificados)."""
     points = []
     for ev in evals:
-        results = db.query(DatasetResult).filter(DatasetResult.evaluation_id == ev.id).all()
+        if ev.eval_type == "run":
+            results = db.query(TestResult).filter(TestResult.run_id == ev.source_run_id).all()
+            point_type = "run"
+        else:
+            results = db.query(DatasetResult).filter(DatasetResult.evaluation_id == ev.source_eval_id).all()
+            point_type = "dataset_eval"
+
         metric_avgs: dict[str, list] = {}
         for result in results:
             for metric_name, score in (result.scores or {}).items():
@@ -395,16 +280,97 @@ def dataset_timeline(
         total = len(results)
         passed = sum(1 for r in results if r.passed)
 
-        points.append({
+        point: dict = {
             "id": ev.id,
-            "type": "dataset_eval",
+            "type": point_type,
             "date": ev.created_at.isoformat() if ev.created_at else None,
             "overall_score": ev.overall_score,
             "metrics": metrics,
             "total": total,
             "passed": passed,
             "profile_id": ev.profile_id,
-        })
+        }
+        if point_type == "dataset_eval" and ev.dataset_id:
+            dataset = db.get(Dataset, ev.dataset_id)
+            point["dataset_name"] = dataset.name if dataset else f"Dataset #{ev.dataset_id}"
+        points.append(point)
+    return points
+
+
+@router.get("/timeline/agents/{agent_id}")
+def agent_timeline(
+    agent_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    """Timeline de evolução de um agente: runs + avaliações de datasets vinculados."""
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
+    if not agent:
+        raise HTTPException(404, "Agente não encontrado")
+
+    # Datasets vinculados a este agente
+    linked_datasets = db.query(Dataset).filter(
+        Dataset.agent_id == agent_id,
+        Dataset.workspace_id == workspace.workspace_id,
+    ).all()
+    linked_dataset_ids = [d.id for d in linked_datasets]
+
+    # Busca todos os Evaluation completados para runs do agente
+    from sqlalchemy import or_
+    q = db.query(Evaluation).filter(
+        Evaluation.workspace_id == workspace.workspace_id,
+        Evaluation.status == "completed",
+    )
+    if linked_dataset_ids:
+        q = q.filter(
+            or_(
+                (Evaluation.eval_type == "run") & (Evaluation.agent_id == agent_id),
+                (Evaluation.eval_type == "dataset") & (Evaluation.dataset_id.in_(linked_dataset_ids)),
+            )
+        )
+    else:
+        q = q.filter(Evaluation.eval_type == "run", Evaluation.agent_id == agent_id)
+
+    evals = q.order_by(Evaluation.created_at.asc()).all()
+    points = _build_timeline_points(evals, db)
+
+    profile_names = {
+        p.id: p.name
+        for p in db.query(EvaluationProfile).filter(EvaluationProfile.workspace_id == workspace.workspace_id).all()
+    }
+
+    return {
+        "agent_id": agent_id,
+        "agent_name": agent.name,
+        "points": points,
+        "profile_names": profile_names,
+        "linked_datasets": [{"id": d.id, "name": d.name} for d in linked_datasets],
+    }
+
+
+@router.get("/timeline/datasets/{dataset_id}")
+def dataset_timeline(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    """Timeline de evolução de um dataset: todas as avaliações completas."""
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.workspace_id == workspace.workspace_id).first()
+    if not ds:
+        raise HTTPException(404, "Dataset não encontrado")
+
+    evals = (
+        db.query(Evaluation)
+        .filter(
+            Evaluation.workspace_id == workspace.workspace_id,
+            Evaluation.eval_type == "dataset",
+            Evaluation.dataset_id == dataset_id,
+            Evaluation.status == "completed",
+        )
+        .order_by(Evaluation.created_at.asc())
+        .all()
+    )
+    points = _build_timeline_points(evals, db)
 
     profile_names = {
         p.id: p.name

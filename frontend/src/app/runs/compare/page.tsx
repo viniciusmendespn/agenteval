@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
-import { getRuns, compareRuns, type TestRun, type RunComparison } from "@/lib/api"
+import { getRuns, compareRuns, type TestRun, type RunComparison, type AgentMetadataSnapshot } from "@/lib/api"
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { cn } from "@/lib/cn"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
@@ -32,6 +32,51 @@ function DeltaBadge({ delta }: { delta?: number | null }) {
   if (pct === 0) return <span className="flex items-center gap-0.5 text-xs text-gray-400"><Minus className="w-3 h-3" /> 0%</span>
   if (delta > 0) return <span className="flex items-center gap-0.5 text-xs text-green-600 font-semibold"><TrendingUp className="w-3 h-3" />+{pct}%</span>
   return <span className="flex items-center gap-0.5 text-xs text-red-600 font-semibold"><TrendingDown className="w-3 h-3" />-{pct}%</span>
+}
+
+const META_LABELS: Record<string, string> = {
+  model_name: "Modelo",
+  model_provider: "Provedor",
+  temperature: "Temperatura",
+  max_tokens: "Max tokens",
+  environment: "Ambiente",
+}
+
+function MetaCard({ own, other }: { own?: AgentMetadataSnapshot | null; other?: AgentMetadataSnapshot | null }) {
+  if (!own) return null
+  const keys = ["model_name", "model_provider", "temperature", "max_tokens", "environment"] as const
+  const rows = keys.filter(k => own[k] != null)
+  const ownTags = own.tags ?? []
+  if (rows.length === 0 && ownTags.length === 0) return null
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
+      {rows.map(k => {
+        const val = String(own[k])
+        const differs = other != null && String(other[k] ?? "—") !== val
+        return (
+          <div key={k} className="flex items-center justify-between text-xs">
+            <span className="text-gray-400">{META_LABELS[k]}</span>
+            <span className={differs ? "font-semibold text-amber-600" : "text-gray-600"}>{val}</span>
+          </div>
+        )
+      })}
+      {ownTags.length > 0 && (
+        <div className="flex items-start justify-between text-xs gap-2">
+          <span className="text-gray-400 shrink-0">Tags</span>
+          <div className="flex flex-wrap gap-1 justify-end">
+            {ownTags.map(tag => {
+              const inOther = other?.tags?.includes(tag) ?? false
+              return (
+                <span key={tag} className={`px-1.5 py-0.5 rounded text-[10px] ${inOther ? "bg-purple-50 text-purple-600" : "bg-amber-50 text-amber-600 font-semibold"}`}>
+                  {tag}
+                </span>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function CompareContent() {
@@ -160,6 +205,7 @@ function CompareContent() {
                 <ScorePill score={comparison.run_a.score} />
               </div>
               <p className="text-xs text-gray-400 mt-1">{new Date(comparison.run_a.created_at).toLocaleString("pt-BR")}</p>
+              <MetaCard own={comparison.run_a.agent_metadata_snapshot} other={comparison.run_b.agent_metadata_snapshot} />
             </div>
             <div className="bg-white rounded-xl border border-blue-200 p-5">
               <p className="text-xs text-gray-500 mb-1">Execução B (nova) — #{comparison.run_b.id}</p>
@@ -168,6 +214,7 @@ function CompareContent() {
                 <ScorePill score={comparison.run_b.score} />
               </div>
               <p className="text-xs text-gray-400 mt-1">{new Date(comparison.run_b.created_at).toLocaleString("pt-BR")}</p>
+              <MetaCard own={comparison.run_b.agent_metadata_snapshot} other={comparison.run_a.agent_metadata_snapshot} />
             </div>
           </div>
 

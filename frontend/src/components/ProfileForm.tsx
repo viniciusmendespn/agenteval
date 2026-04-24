@@ -1,8 +1,9 @@
 "use client"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { cn } from "@/lib/cn"
 import LLMProviderSelector from "./LLMProviderSelector"
 import { LoadingButton } from "./ui/LoadingButton"
+import { getGuardrails, type Guardrail } from "@/lib/api"
 
 export type ProfileFormData = {
   name: string
@@ -28,6 +29,7 @@ export type ProfileFormData = {
   use_prompt_alignment: boolean
   prompt_alignment_threshold: number
   llm_provider_id: number | null
+  guardrail_ids: number[]
 }
 
 interface Props {
@@ -68,6 +70,7 @@ const DEFAULT: ProfileFormData = {
   use_prompt_alignment: false,
   prompt_alignment_threshold: 0.5,
   llm_provider_id: null,
+  guardrail_ids: [],
 }
 
 type MetricConfig = {
@@ -292,22 +295,39 @@ function MetricRow({
   )
 }
 
+const MODE_LABELS: Record<string, string> = { input: "Entrada", output: "Saída", both: "Entrada e Saída" }
+const MODE_COLORS: Record<string, string> = { input: "bg-blue-100 text-blue-700", output: "bg-purple-100 text-purple-700", both: "bg-teal-100 text-teal-700" }
+
 export default function ProfileForm({ initial, onSubmit, submitLabel = "Salvar perfil", backHref }: Props) {
   const [form, setForm] = useState<ProfileFormData>({ ...DEFAULT, ...initial })
   const [criteria, setCriteria] = useState<string[]>(initial?.criteria?.length ? initial.criteria : [""])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [guardrails, setGuardrails] = useState<Guardrail[]>([])
+
+  useEffect(() => {
+    getGuardrails().then(setGuardrails).catch(() => {})
+  }, [])
 
   const setField = (k: keyof ProfileFormData, v: unknown) =>
     setForm(f => ({ ...f, [k]: v }))
+
+  function toggleGuardrail(id: number) {
+    setForm(f => ({
+      ...f,
+      guardrail_ids: f.guardrail_ids.includes(id)
+        ? f.guardrail_ids.filter(x => x !== id)
+        : [...f.guardrail_ids, id],
+    }))
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true); setError(null)
     try {
       await onSubmit({ ...form, criteria: criteria.filter(Boolean) })
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro ao salvar")
       setLoading(false)
     }
   }
@@ -315,6 +335,7 @@ export default function ProfileForm({ initial, onSubmit, submitLabel = "Salvar p
   const activeCount = METRICS.filter(m => form[m.key as keyof ProfileFormData]).length
     + criteria.filter(Boolean).length
     + (form.non_advice_types.filter(Boolean).length > 0 && form.use_non_advice ? 1 : 0)
+    + form.guardrail_ids.length
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -453,6 +474,39 @@ export default function ProfileForm({ initial, onSubmit, submitLabel = "Salvar p
           + Adicionar critério
         </button>
       </section>
+
+      {/* Guardrails */}
+      {guardrails.length > 0 && (
+        <section className="flame-panel p-5 space-y-3">
+          <h2 className={sec}>Guardrails</h2>
+          <p className={hint}>
+            Regras de conteúdo avaliadas em cada resposta. Ative os que devem ser verificados neste perfil.
+            Cada guardrail gera uma métrica no resultado (score 0 = violação, score 100% = ok).
+          </p>
+          <div className="space-y-2">
+            {guardrails.map(g => {
+              const selected = form.guardrail_ids.includes(g.id)
+              const modeColor = MODE_COLORS[g.mode] || "bg-gray-100 text-gray-600"
+              return (
+                <label key={g.id} className={cn(
+                  "flex items-start gap-3 rounded-md border p-3 cursor-pointer transition-colors",
+                  selected ? "border-teal-200 bg-teal-50/40" : "border-gray-100 hover:border-gray-200"
+                )}>
+                  <input type="checkbox" className="mt-0.5 rounded" checked={selected} onChange={() => toggleGuardrail(g.id)} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-gray-800">{g.name}</span>
+                      {g.is_system && <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">Padrão</span>}
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${modeColor}`}>{MODE_LABELS[g.mode] || g.mode}</span>
+                    </div>
+                    {g.description && <p className="text-xs text-gray-400 mt-0.5">{g.description}</p>}
+                  </div>
+                </label>
+              )
+            })}
+          </div>
+        </section>
+      )}
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 

@@ -21,7 +21,39 @@ class LLMProviderOut(LLMProviderCreate):
         from_attributes = True
 
 
+# --- AgentPromptVersion ---
+
+class AgentPromptVersionOut(BaseModel):
+    id: int
+    version_num: int
+    system_prompt: str
+    status: str = "active"   # "draft" | "active" | "archived"
+    label: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AgentPromptVersionUpdate(BaseModel):
+    label: Optional[str] = None
+    system_prompt: Optional[str] = None
+
+
 # --- Agent ---
+
+class AgentMetadataSnapshot(BaseModel):
+    model_provider: Optional[str] = None
+    model_name: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    environment: Optional[str] = None
+    tags: list[str] = []
+    extra_metadata: dict = {}
+
+    class Config:
+        from_attributes = True
+
 
 class AgentCreate(BaseModel):
     name: str
@@ -35,9 +67,38 @@ class AgentCreate(BaseModel):
     token_request_body: Optional[str] = None
     token_output_field: Optional[str] = None
     token_header_name: Optional[str] = None
+    model_provider: str = "custom"
+    model_name: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    environment: str = "experiment"
+    tags: list[str] = []
+    extra_metadata: dict = {}
 
 class AgentOut(AgentCreate):
     id: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# --- Guardrail ---
+
+class GuardrailCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    mode: str = "both"       # "input" | "output" | "both"
+    criterion: str
+
+class GuardrailOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    mode: str
+    criterion: str
+    preset_key: Optional[str] = None
+    is_system: bool = False
     created_at: datetime
 
     class Config:
@@ -93,6 +154,7 @@ class EvaluationProfileCreate(BaseModel):
     use_prompt_alignment: bool = False
     prompt_alignment_threshold: float = 0.5
     llm_provider_id: Optional[int] = None
+    guardrail_ids: list[int] = []
 
     @field_validator("non_advice_types", mode="before")
     @classmethod
@@ -115,6 +177,7 @@ class EvaluationProfileOut(EvaluationProfileCreate):
 # --- TestRun ---
 
 class TestRunCreate(BaseModel):
+    name: Optional[str] = None
     agent_id: int
     profile_id: int
     test_case_ids: list[int]
@@ -136,6 +199,7 @@ class TestResultOut(BaseModel):
 
 class TestRunOut(BaseModel):
     id: int
+    name: Optional[str] = None
     agent_id: int
     agent_name: Optional[str] = None
     profile_id: int
@@ -143,6 +207,7 @@ class TestRunOut(BaseModel):
     test_case_ids: list[int]
     status: str
     overall_score: Optional[float]
+    agent_metadata_snapshot: Optional[AgentMetadataSnapshot] = None
     created_at: datetime
     completed_at: Optional[datetime]
     results: list[TestResultOut] = []
@@ -157,6 +222,7 @@ class DatasetCreate(BaseModel):
     name: str
     description: Optional[str] = None
     system_prompt: Optional[str] = None
+    agent_id: Optional[int] = None
 
 class DatasetRecordOut(BaseModel):
     id: int
@@ -176,6 +242,8 @@ class DatasetOut(BaseModel):
     name: str
     description: Optional[str]
     system_prompt: Optional[str] = None
+    agent_id: Optional[int] = None
+    agent_name: Optional[str] = None
     created_at: datetime
     record_count: int = 0
 
@@ -187,6 +255,8 @@ class DatasetDetailOut(BaseModel):
     name: str
     description: Optional[str]
     system_prompt: Optional[str] = None
+    agent_id: Optional[int] = None
+    agent_name: Optional[str] = None
     created_at: datetime
     records: list[DatasetRecordOut] = []
 
@@ -197,6 +267,7 @@ class DatasetDetailOut(BaseModel):
 # --- DatasetEvaluation ---
 
 class DatasetEvaluationCreate(BaseModel):
+    name: Optional[str] = None
     profile_id: int
 
 class DatasetResultOut(BaseModel):
@@ -213,13 +284,38 @@ class DatasetResultOut(BaseModel):
 
 class DatasetEvaluationOut(BaseModel):
     id: int
+    name: Optional[str] = None
     dataset_id: int
     profile_id: int
     status: str
     overall_score: Optional[float]
+    agent_metadata_snapshot: Optional[AgentMetadataSnapshot] = None
     created_at: datetime
     completed_at: Optional[datetime]
     results: list[DatasetResultOut] = []
+
+    class Config:
+        from_attributes = True
+
+
+# --- Evaluation (unificado) ---
+
+class EvaluationOut(BaseModel):
+    id: int
+    name: Optional[str] = None
+    eval_type: str
+    agent_id: Optional[int] = None
+    agent_name: Optional[str] = None
+    dataset_id: Optional[int] = None
+    dataset_name: Optional[str] = None
+    profile_id: int
+    profile_name: Optional[str] = None
+    source_run_id: Optional[int] = None
+    source_eval_id: Optional[int] = None
+    status: str
+    overall_score: Optional[float]
+    created_at: datetime
+    completed_at: Optional[datetime]
 
     class Config:
         from_attributes = True

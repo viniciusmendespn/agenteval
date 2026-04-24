@@ -2,7 +2,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import Agent, EvaluationProfile, TestCase, TestRun, TestResult
+from ..models import Agent, EvaluationProfile, TestCase, TestRun, TestResult, Evaluation
 from ..schemas import TestRunCreate, TestRunOut
 from ..queue import get_task_queue
 from ..workspace import WorkspaceContext, get_current_workspace, require_writer
@@ -50,6 +50,10 @@ def cancel_run(run_id: int, db: Session = Depends(get_db), workspace: WorkspaceC
     get_task_queue().cancel(run.task_id or "")
     run.status = "cancelled"
     db.commit()
+    ev = db.query(Evaluation).filter(Evaluation.source_run_id == run_id).first()
+    if ev:
+        ev.status = "cancelled"
+        db.commit()
     return {"ok": True, "message": "Cancelamento solicitado."}
 
 
@@ -59,6 +63,7 @@ def delete_run(run_id: int, db: Session = Depends(get_db), workspace: WorkspaceC
     run = db.query(TestRun).filter(TestRun.id == run_id, TestRun.workspace_id == workspace.workspace_id).first()
     if not run:
         raise HTTPException(404, "Execução não encontrada")
+    db.query(Evaluation).filter(Evaluation.source_run_id == run_id).delete()
     db.query(TestResult).filter(TestResult.run_id == run_id).delete()
     db.delete(run)
     db.commit()
@@ -89,12 +94,17 @@ def create_run(
     if len(test_cases) != len(set(data.test_case_ids)):
         raise HTTPException(400, "Um ou mais casos de teste nÃ£o existem neste workspace")
 
+    from ..tasks.executors import _agent_metadata_snapshot
+    metadata_snapshot = _agent_metadata_snapshot(agent)
+
     run = TestRun(
+        name=data.name,
         agent_id=data.agent_id,
         profile_id=data.profile_id,
         test_case_ids=data.test_case_ids,
         status="running",
         workspace_id=workspace.workspace_id,
+        agent_metadata_snapshot=metadata_snapshot,
     )
     db.add(run)
     db.commit()
@@ -102,6 +112,20 @@ def create_run(
 
     task_id = get_task_queue().enqueue("execute_run", {"run_id": run.id})
     run.task_id = task_id
+    db.commit()
+
+    # Cria espelho na tabela unificada de avaliações
+    unified = Evaluation(
+        workspace_id=workspace.workspace_id,
+        name=data.name,
+        profile_id=data.profile_id,
+        eval_type="run",
+        source_run_id=run.id,
+        agent_id=data.agent_id,
+        status="running",
+        created_at=run.created_at,
+    )
+    db.add(unified)
     db.commit()
 
     return _enrich_run(run, db)

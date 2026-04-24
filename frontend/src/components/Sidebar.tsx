@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   Play,
   Settings,
+  ShieldCheck,
   SlidersHorizontal,
   TrendingUp,
 } from "lucide-react"
@@ -34,6 +35,7 @@ const sections = [
     items: [
       { href: "/agents", label: "Agentes", icon: Bot },
       { href: "/profiles", label: "Perfis de Avaliação", icon: SlidersHorizontal },
+      { href: "/guardrails", label: "Guardrails", icon: ShieldCheck },
     ],
   },
   {

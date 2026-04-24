@@ -164,8 +164,32 @@ export default function RunsPage() {
                   transition={{ delay: i * 0.025, duration: 0.15 }}
                 >
                   <td className="px-5 py-3 text-gray-400">#{r.id}</td>
-                  <td className="px-5 py-3 font-medium text-gray-800">
-                    {r.agent_name ?? <span className="text-gray-400">—</span>}
+                  <td className="px-5 py-3">
+                    <span className="font-medium text-gray-800">{r.agent_name ?? <span className="text-gray-400">—</span>}</span>
+                    {r.agent_metadata_snapshot && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {r.agent_metadata_snapshot.model_name && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-mono">
+                            {r.agent_metadata_snapshot.model_name}
+                          </span>
+                        )}
+                        {r.agent_metadata_snapshot.model_provider && r.agent_metadata_snapshot.model_provider !== "custom" && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">
+                            {r.agent_metadata_snapshot.model_provider}
+                          </span>
+                        )}
+                        {r.agent_metadata_snapshot.environment && r.agent_metadata_snapshot.environment !== "experiment" && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded">
+                            {r.agent_metadata_snapshot.environment}
+                          </span>
+                        )}
+                        {r.agent_metadata_snapshot.tags?.map(tag => (
+                          <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-gray-500 text-xs">
                     {r.profile_name ?? <span className="text-gray-400">—</span>}

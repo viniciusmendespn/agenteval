@@ -1,8 +1,8 @@
 "use client"
-import { useRef, useState } from "react"
+import { useRef, useState, useEffect } from "react"
 import {
-  analyzeImport, uploadExtraFile, previewImport, confirmImport,
-  type AnalyzeResult, type MappingRequest, type PreviewResult,
+  analyzeImport, uploadExtraFile, previewImport, confirmImport, getAgents,
+  type AnalyzeResult, type MappingRequest, type PreviewResult, type Agent,
 } from "@/lib/api"
 import { LoadingButton } from "@/components/ui/LoadingButton"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
@@ -24,6 +24,8 @@ export default function ImportDatasetPage() {
   const [datasetName, setDatasetName] = useState("")
   const [datasetDescription, setDatasetDescription] = useState("")
   const [datasetSystemPrompt, setDatasetSystemPrompt] = useState("")
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null)
 
   // mapeamento
   const [inputPath, setInputPath] = useState("")
@@ -35,6 +37,8 @@ export default function ImportDatasetPage() {
 
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [createdDatasetId, setCreatedDatasetId] = useState<number | null>(null)
+
+  useEffect(() => { getAgents().then(setAgents).catch(() => {}) }, [])
 
   const fileRef = useRef<HTMLInputElement>(null)
   const extraRef = useRef<HTMLInputElement>(null)
@@ -95,6 +99,7 @@ export default function ImportDatasetPage() {
       dataset_name: datasetName.trim(),
       dataset_description: datasetDescription.trim() || undefined,
       dataset_system_prompt: datasetSystemPrompt.trim() || undefined,
+      agent_id: selectedAgentId ?? undefined,
       file_ids: [analysis!.file_id, ...extraFiles.map(f => f.file_id)],
       input_path: inputPath,
       output_path: outputPath === NONE ? undefined : outputPath,
@@ -138,6 +143,35 @@ export default function ImportDatasetPage() {
                 onChange={e => setDatasetDescription(e.target.value)}
                 placeholder="Opcional" />
             </div>
+            {agents.length > 0 && (
+              <div>
+                <label className={lbl}>Vincular a agente <span className="text-gray-400 font-normal">(opcional)</span></label>
+                <p className="text-xs text-gray-400 mb-1">O system prompt do agente será copiado automaticamente como contexto do dataset.</p>
+                <select
+                  className={inp}
+                  value={selectedAgentId ?? ""}
+                  onChange={e => {
+                    const aid = e.target.value ? Number(e.target.value) : null
+                    setSelectedAgentId(aid)
+                    if (aid) {
+                      const agent = agents.find(a => a.id === aid)
+                      if (agent?.system_prompt && !datasetSystemPrompt) setDatasetSystemPrompt(agent.system_prompt)
+                    }
+                  }}
+                >
+                  <option value="">— nenhum —</option>
+                  {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                {selectedAgentId && (() => {
+                  const agent = agents.find(a => a.id === selectedAgentId)
+                  return agent?.system_prompt ? (
+                    <p className="text-xs text-teal-600 mt-1">System prompt do agente será copiado como contexto.</p>
+                  ) : (
+                    <p className="text-xs text-gray-400 mt-1">Agente selecionado não possui system prompt.</p>
+                  )
+                })()}
+              </div>
+            )}
             <div>
               <label className={lbl}>System Prompt <span className="text-gray-400 font-normal">(opcional)</span></label>
               <p className="text-xs text-gray-400 mb-1">Instruções do agente que gerou as respostas. Usado como contexto nas avaliações.</p>

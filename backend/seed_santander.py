@@ -13,6 +13,7 @@ from app.models import (
     Agent, TestCase, EvaluationProfile, TestRun, TestResult,
     Dataset, DatasetRecord, DatasetEvaluation, DatasetResult,
     Workspace, User, WorkspaceMember,
+    Evaluation, AgentPromptVersion, Guardrail,
 )
 from app.workspace import ensure_user, ensure_workspace
 
@@ -46,6 +47,28 @@ def compute_passed(scores: dict, profile_dict: dict) -> bool:
             if v < profile_dict.get(f"{k}_threshold", 0.5):
                 return False
     return True
+
+def _get_guardrail_ids(db, *preset_keys: str) -> list[int]:
+    if not preset_keys:
+        return []
+    rows = db.query(Guardrail).filter(Guardrail.preset_key.in_(list(preset_keys))).all()
+    return [r.id for r in rows]
+
+
+def _metadata_snapshot(agent: Agent) -> dict:
+    return {
+        "model_provider": agent.model_provider,
+        "model_name": agent.model_name,
+        "temperature": agent.temperature,
+        "max_tokens": agent.max_tokens,
+        "environment": agent.environment,
+        "tags": agent.tags or [],
+        "extra_metadata": agent.extra_metadata or {},
+    }
+
+
+PROFILE_EXTRA_KEYS = {"guardrail_preset_keys"}
+
 
 def gen_scores(quality: str, profile_dict: dict, run_idx: int, total_runs: int) -> tuple[dict, dict]:
     improvement = (run_idx / max(total_runs - 1, 1)) * 0.22
@@ -166,6 +189,9 @@ def gen_scores(quality: str, profile_dict: dict, run_idx: int, total_runs: int) 
 
 
 def clean_workspace(db, wid: int) -> None:
+    db.query(Evaluation).filter(Evaluation.workspace_id == wid).delete(synchronize_session=False)
+    db.query(AgentPromptVersion).filter(AgentPromptVersion.workspace_id == wid).delete(synchronize_session=False)
+    db.commit()
     db.query(DatasetResult).filter(
         DatasetResult.evaluation_id.in_(
             db.query(DatasetEvaluation.id).filter(DatasetEvaluation.workspace_id == wid)
@@ -190,6 +216,22 @@ def clean_workspace(db, wid: int) -> None:
     db.commit()
 
 
+def _mirror_run(db, run: TestRun, wid: int) -> None:
+    db.add(Evaluation(
+        workspace_id=wid,
+        name=run.name,
+        profile_id=run.profile_id,
+        eval_type="run",
+        source_run_id=run.id,
+        agent_id=run.agent_id,
+        status=run.status,
+        overall_score=run.overall_score,
+        created_at=run.created_at,
+        completed_at=run.completed_at,
+    ))
+    db.commit()
+
+
 # --- PlatConv data ------------------------------------------------------------
 
 PLATCONV_AGENTS = [
@@ -197,7 +239,13 @@ PLATCONV_AGENTS = [
         "name": "Santander Chat -- Fluxo Bancário v1",
         "url": "https://api.santander-dev.internal/chat",
         "api_key": "santander-api-key-v1",
-        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "model_provider": "azure-openai",
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        "environment": "experiment",
+        "tags": ["banking", "v1", "legacy"],
+        "extra_metadata": {"deployment": "sant-gpt4o-eastus"},
         "system_prompt": (
             "Você é um assistente bancário do Santander. "
             "Responda perguntas sobre saldo, extrato e cartões. "
@@ -211,7 +259,13 @@ PLATCONV_AGENTS = [
         "name": "Santander Chat -- Fluxo Bancário v2",
         "url": "https://api.santander-dev.internal/chat",
         "api_key": "santander-api-key-v2",
-        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "model_provider": "azure-openai",
+        "temperature": 0.3,
+        "max_tokens": 1024,
+        "environment": "production",
+        "tags": ["banking", "v2", "guardrails-on"],
+        "extra_metadata": {"deployment": "sant-gpt4o-eastus", "top_p": 0.95},
         "system_prompt": (
             "Você é um assistente bancário Santander. "
             "Ao responder sobre cartões, sempre confirme o produto (Visa/Mastercard) antes de informar o limite. "
@@ -227,7 +281,13 @@ PLATCONV_AGENTS = [
         "name": "Santander Chat -- Suporte Geral",
         "url": "https://api.santander-dev.internal/support",
         "api_key": "santander-api-key-support",
-        "model": "gpt-4o-mini",
+        "model_name": "gpt-4o-mini",
+        "model_provider": "azure-openai",
+        "temperature": 0.5,
+        "max_tokens": 512,
+        "environment": "production",
+        "tags": ["support", "gpt4o-mini"],
+        "extra_metadata": {"deployment": "sant-mini-eastus"},
         "system_prompt": (
             "Você é um assistente de suporte Santander. "
             "Ajude clientes com acesso ao app, recuperação de senha e contestações. "
@@ -242,6 +302,7 @@ PLATCONV_AGENTS = [
 PLATCONV_PROFILES = [
     {
         "name": "Bancário Rigoroso",
+        "guardrail_preset_keys": ["racism_hate", "personal_data", "prompt_injection", "financial_advice"],
         "use_relevancy": True, "relevancy_threshold": 0.7,
         "use_hallucination": True, "hallucination_threshold": 0.3,
         "use_toxicity": False, "toxicity_threshold": 0.3,
@@ -261,6 +322,7 @@ PLATCONV_PROFILES = [
     },
     {
         "name": "Produção Lite",
+        "guardrail_preset_keys": ["racism_hate", "prompt_injection"],
         "use_relevancy": True, "relevancy_threshold": 0.6,
         "use_hallucination": True, "hallucination_threshold": 0.4,
         "use_toxicity": False, "toxicity_threshold": 0.5,
@@ -278,6 +340,7 @@ PLATCONV_PROFILES = [
     },
     {
         "name": "Homologação Completa",
+        "guardrail_preset_keys": ["racism_hate", "politics", "violence", "explicit_content", "financial_advice", "medical_advice", "personal_data", "prompt_injection"],
         "use_relevancy": True, "relevancy_threshold": 0.75,
         "use_hallucination": True, "hallucination_threshold": 0.2,
         "use_toxicity": True, "toxicity_threshold": 0.2,
@@ -574,7 +637,13 @@ PITCHMAKER_AGENTS = [
         "name": "Agente Investimentos v1",
         "url": "https://api.santander-dev.internal/investments/v1",
         "api_key": "santander-invest-key-v1",
-        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "model_provider": "azure-openai",
+        "temperature": 0.7,
+        "max_tokens": 1024,
+        "environment": "experiment",
+        "tags": ["investments", "v1"],
+        "extra_metadata": {"deployment": "sant-gpt4o-eastus"},
         "system_prompt": (
             "Você é um assistente de investimentos Santander. "
             "Apresente opções de CDB, LCI, LCA e fundos de investimento. "
@@ -588,7 +657,13 @@ PITCHMAKER_AGENTS = [
         "name": "Agente Investimentos v2",
         "url": "https://api.santander-dev.internal/investments/v2",
         "api_key": "santander-invest-key-v2",
-        "model": "gpt-4o",
+        "model_name": "gpt-4o",
+        "model_provider": "azure-openai",
+        "temperature": 0.2,
+        "max_tokens": 1024,
+        "environment": "staging",
+        "tags": ["investments", "v2", "strict-compliance"],
+        "extra_metadata": {"deployment": "sant-gpt4o-eastus", "top_p": 0.9},
         "system_prompt": (
             "Você é um assistente de investimentos Santander. "
             "SEMPRE pergunte o perfil do investidor (conservador/moderado/arrojado) antes de qualquer recomendação. "
@@ -622,6 +697,7 @@ PITCHMAKER_TEST_CASES = [
 PITCHMAKER_PROFILES = [
     {
         "name": "Investimentos Precisos",
+        "guardrail_preset_keys": ["financial_advice", "personal_data", "prompt_injection"],
         "use_relevancy": True, "relevancy_threshold": 0.72,
         "use_hallucination": True, "hallucination_threshold": 0.15,
         "use_toxicity": False, "toxicity_threshold": 0.5,
@@ -641,6 +717,7 @@ PITCHMAKER_PROFILES = [
     },
     {
         "name": "Pitch Lite",
+        "guardrail_preset_keys": ["financial_advice"],
         "use_relevancy": True, "relevancy_threshold": 0.65,
         "use_hallucination": False, "hallucination_threshold": 0.5,
         "use_toxicity": False, "toxicity_threshold": 0.5,
@@ -658,13 +735,13 @@ PITCHMAKER_PROFILES = [
     },
 ]
 
-# (data, idx_agente, idx_perfil, score_alvo)
+# (data, idx_agente, idx_perfil, score_alvo, nome)
 PITCHMAKER_RUNS_CONFIG = [
-    ("2025-02-10", 0, 0, 0.74),
-    ("2025-02-24", 0, 0, 0.78),
-    ("2025-03-10", 0, 0, 0.81),
-    ("2025-03-28", 1, 0, 0.85),
-    ("2025-04-15", 1, 0, 0.88),
+    ("2025-02-10", 0, 0, 0.74, "Sprint 1 -- Baseline Investimentos"),
+    ("2025-02-24", 0, 0, 0.78, "Sprint 1 -- Ajuste de Disclaimers"),
+    ("2025-03-10", 0, 0, 0.81, "Sprint 2 -- Perfil de Investidor"),
+    ("2025-03-28", 1, 0, 0.85, "Homologação -- v2 Candidato"),
+    ("2025-04-15", 1, 0, 0.88, "Prod v1 -- Deploy Investimentos"),
 ]
 
 
@@ -691,6 +768,21 @@ def seed_platconv(db):
         agent_objs.append(obj)
     db.commit()
     print(f"  {len(agent_objs)} agentes criados")
+
+    # Guardrail customizado PlatConv
+    g_juridico = Guardrail(
+        workspace_id=wid,
+        name="Tópicos Jurídicos",
+        description="Impede que o assistente bancário forneça orientação jurídica.",
+        mode="output",
+        criterion="must NOT provide legal advice, recommend legal actions or interpret laws and regulations",
+        preset_key=None,
+        is_system=False,
+    )
+    db.add(g_juridico)
+    db.flush()
+    db.commit()
+    print("  Guardrail customizado criado: Tópicos Jurídicos")
 
     # Test Cases
     tc_objs = []
@@ -731,7 +823,12 @@ def seed_platconv(db):
     # Profiles
     profile_objs = []
     for p in PLATCONV_PROFILES:
-        obj = EvaluationProfile(**p, workspace_id=wid)
+        preset_keys = p.get("guardrail_preset_keys", [])
+        gids = _get_guardrail_ids(db, *preset_keys)
+        if p["name"] == "Homologação Completa":
+            gids.append(g_juridico.id)
+        profile_data = {k: v for k, v in p.items() if k not in PROFILE_EXTRA_KEYS}
+        obj = EvaluationProfile(**profile_data, workspace_id=wid, guardrail_ids=gids)
         db.add(obj)
         db.flush()
         profile_objs.append(obj)
@@ -750,12 +847,14 @@ def seed_platconv(db):
 
         run = TestRun(
             workspace_id=wid,
+            name=label,
             agent_id=agent.id,
             profile_id=profile.id,
             test_case_ids=tc_ids,
             status="completed",
             created_at=run_date,
             completed_at=run_date + timedelta(minutes=3, seconds=run_i * 10),
+            agent_metadata_snapshot=_metadata_snapshot(agent),
         )
         db.add(run)
         db.flush()
@@ -810,16 +909,50 @@ def seed_platconv(db):
 
         run.overall_score = round(sum(all_scores_vals) / len(all_scores_vals), 4) if all_scores_vals else None
         db.commit()
+        _mirror_run(db, run, wid)
         print(f"  Run #{run.id} [{date_str}] {agent.name[:35]} | score={run.overall_score} | {label}")
         run_objs.append(run)
 
+    # Histórico de versões de system prompt (demo: archived / active / draft)
+    db.add(AgentPromptVersion(
+        agent_id=agent_objs[0].id, workspace_id=wid, version_num=1,
+        status="archived", label="Versão inicial — Saldo e Cartões",
+        system_prompt="Você é um assistente bancário do Santander. Responda perguntas sobre saldo e cartões.",
+        created_at=datetime(2025, 1, 10),
+    ))
+    db.add(AgentPromptVersion(
+        agent_id=agent_objs[0].id, workspace_id=wid, version_num=2,
+        status="active", label="Extrato incluído — Objetividade",
+        system_prompt="Você é um assistente bancário do Santander. Responda perguntas sobre saldo, extrato e cartões. Seja preciso e objetivo.",
+        created_at=datetime(2025, 2, 5),
+    ))
+    db.add(AgentPromptVersion(
+        agent_id=agent_objs[0].id, workspace_id=wid, version_num=3,
+        status="draft", label="[Rascunho] Adicionar suporte a investimentos",
+        system_prompt=(
+            "Você é um assistente bancário do Santander. "
+            "Responda perguntas sobre saldo, extrato, cartões e investimentos. "
+            "Pergunte o perfil do investidor antes de recomendar produtos."
+        ),
+        created_at=datetime(2025, 4, 18),
+    ))
+    db.add(AgentPromptVersion(
+        agent_id=agent_objs[1].id, workspace_id=wid, version_num=1,
+        status="active", label="Confirmação de produto + perfil do investidor",
+        system_prompt="Você é um assistente bancário Santander. Ao responder sobre cartões, confirme o produto antes do limite. Mantenha precisão numérica.",
+        created_at=datetime(2025, 3, 20),
+    ))
+    db.commit()
+    print("  Versões de prompt: v1(archived), v2(active), v3(draft) + v2-agente(active)")
+
     # -- Datasets --------------------------------------------------------------
 
-    # Dataset 1: Conversas Produção -- Abril 2025 (20 records)
+    # Dataset 1: Conversas Produção -- Abril 2025 (20 records) → vinculado ao agente v2
     ds1 = Dataset(
         workspace_id=wid,
         name="Conversas Produção -- Abril 2025",
         description="Conversas reais exportadas do canal digital em abril/2025 para análise de qualidade.",
+        agent_id=agent_objs[1].id,
     )
     db.add(ds1)
     db.flush()
@@ -860,11 +993,12 @@ def seed_platconv(db):
         db.flush()
         ds1_records.append(rec)
 
-    # Dataset 2: Casos Sintéticos -- Bancário (15 records)
+    # Dataset 2: Casos Sintéticos -- Bancário (15 records) → vinculado ao agente v2
     ds2 = Dataset(
         workspace_id=wid,
         name="Casos Sintéticos -- Bancário",
         description="Casos sintéticos de alta qualidade gerados para cobertura de cenários críticos.",
+        agent_id=agent_objs[1].id,
     )
     db.add(ds2)
     db.flush()
@@ -894,11 +1028,12 @@ def seed_platconv(db):
         db.flush()
         ds2_records.append(rec)
 
-    # Dataset 3: Conversas Homologação -- Março 2025 (18 records)
+    # Dataset 3: Conversas Homologação -- Março 2025 (18 records) → vinculado ao agente v1 (homologação)
     ds3 = Dataset(
         workspace_id=wid,
         name="Conversas Homologação -- Março 2025",
         description="Conversas da fase de homologação (Sprint 4) usadas para validação pré-produção.",
+        agent_id=agent_objs[0].id,
     )
     db.add(ds3)
     db.flush()
@@ -932,10 +1067,11 @@ def seed_platconv(db):
         db.flush()
         ds3_records.append(rec)
 
-    # Dataset 4: Casos Críticos -- Investimentos (12 records)
+    # Dataset 4: Casos Críticos -- Investimentos (12 records) → vinculado ao agente v2
     ds4 = Dataset(
         workspace_id=wid,
         name="Casos Críticos -- Investimentos",
+        agent_id=agent_objs[1].id,
         description="Casos focados em investimentos com falhas detectadas: alucinação de taxas e ausência de disclaimer.",
     )
     db.add(ds4)
@@ -980,45 +1116,57 @@ def seed_platconv(db):
     eval_objs = []
 
     # Dataset 1 × Bancário Rigoroso: 3 avaliações regulares (a 4ª será o A/B #42)
-    for i, (date_str, target) in enumerate([
-        ("2025-03-01", 0.79),
-        ("2025-03-15", 0.81),
-        ("2025-03-28", 0.82),
+    for i, (date_str, target, eval_name) in enumerate([
+        ("2025-03-01", 0.79, "Sprint 3 -- Baseline Produção"),
+        ("2025-03-15", 0.81, "Sprint 3 -- Pós-Ajuste"),
+        ("2025-03-28", 0.82, "Sprint 4 -- Pré-Homologação"),
     ]):
-        ev = _create_eval(db, wid, ds1.id, profile_rigoroso.id, p_rigoroso, ds1_records, date_str, target, i, 4)
+        ev = _create_eval(db, wid, ds1.id, profile_rigoroso.id, p_rigoroso, ds1_records, date_str, target, i, 4, agent_id=agent_objs[1].id, name=eval_name, agent=agent_objs[1])
         eval_objs.append(ev)
-        print(f"  Eval #{ev.id} [Dataset 1 × Rigoroso] {date_str} score={target}")
+        print(f"  Eval #{ev.id} [Dataset 1 × Rigoroso] {date_str} score={target} ({eval_name})")
 
     # Dataset 2 × Bancário Rigoroso: 2 avaliações
-    for i, (date_str, target) in enumerate([("2025-03-20", 0.90), ("2025-04-05", 0.93)]):
-        ev = _create_eval(db, wid, ds2.id, profile_rigoroso.id, p_rigoroso, ds2_records, date_str, target, i, 2)
+    for i, (date_str, target, eval_name) in enumerate([
+        ("2025-03-20", 0.90, "Homologação -- Casos Sintéticos"),
+        ("2025-04-05", 0.93, "Prod v1 -- Validação Pós-Deploy"),
+    ]):
+        ev = _create_eval(db, wid, ds2.id, profile_rigoroso.id, p_rigoroso, ds2_records, date_str, target, i, 2, agent_id=agent_objs[1].id, name=eval_name, agent=agent_objs[1])
         eval_objs.append(ev)
-        print(f"  Eval #{ev.id} [Dataset 2 × Rigoroso] {date_str} score={target}")
+        print(f"  Eval #{ev.id} [Dataset 2 × Rigoroso] {date_str} score={target} ({eval_name})")
 
     # Dataset 3 × Homologação Completa: 3 avaliações
-    for i, (date_str, target) in enumerate([("2025-03-05", 0.83), ("2025-03-18", 0.86), ("2025-03-31", 0.89)]):
-        ev = _create_eval(db, wid, ds3.id, profile_homolog.id, p_homolog, ds3_records, date_str, target, i, 3)
+    for i, (date_str, target, eval_name) in enumerate([
+        ("2025-03-05", 0.83, "Homologação -- Ciclo 1"),
+        ("2025-03-18", 0.86, "Homologação -- Ciclo 2"),
+        ("2025-03-31", 0.89, "Homologação -- Aprovação Final"),
+    ]):
+        ev = _create_eval(db, wid, ds3.id, profile_homolog.id, p_homolog, ds3_records, date_str, target, i, 3, agent_id=agent_objs[0].id, name=eval_name, agent=agent_objs[0])
         eval_objs.append(ev)
-        print(f"  Eval #{ev.id} [Dataset 3 × Homolog] {date_str} score={target}")
+        print(f"  Eval #{ev.id} [Dataset 3 × Homolog] {date_str} score={target} ({eval_name})")
 
     # Dataset 4 × Bancário Rigoroso: 2 avaliações
-    for i, (date_str, target) in enumerate([("2025-03-10", 0.70), ("2025-04-01", 0.85)]):
-        ev = _create_eval(db, wid, ds4.id, profile_rigoroso.id, p_rigoroso, ds4_records, date_str, target, i, 2)
+    for i, (date_str, target, eval_name) in enumerate([
+        ("2025-03-10", 0.70, "Sprint 3 -- Detecção de Falhas"),
+        ("2025-04-01", 0.85, "Prod v2 -- Casos Críticos Resolvidos"),
+    ]):
+        ev = _create_eval(db, wid, ds4.id, profile_rigoroso.id, p_rigoroso, ds4_records, date_str, target, i, 2, agent_id=agent_objs[1].id, name=eval_name, agent=agent_objs[1])
         eval_objs.append(ev)
-        print(f"  Eval #{ev.id} [Dataset 4 × Rigoroso] {date_str} score={target}")
+        print(f"  Eval #{ev.id} [Dataset 4 × Rigoroso] {date_str} score={target} ({eval_name})")
 
-    return wid, ds1, ds1_records, profile_rigoroso, p_rigoroso, eval_objs
+    return wid, ds1, ds1_records, profile_rigoroso, p_rigoroso, eval_objs, agent_objs
 
 
-def _create_eval(db, wid, ds_id, profile_id, profile_dict, records, date_str, target_score, idx, total):
+def _create_eval(db, wid, ds_id, profile_id, profile_dict, records, date_str, target_score, idx, total, agent_id=None, name=None, agent=None):
     ev_date = datetime.strptime(date_str, "%Y-%m-%d")
     ev = DatasetEvaluation(
         workspace_id=wid,
+        name=name,
         dataset_id=ds_id,
         profile_id=profile_id,
         status="completed",
         created_at=ev_date,
         completed_at=ev_date + timedelta(minutes=2),
+        agent_metadata_snapshot=_metadata_snapshot(agent) if agent else None,
     )
     db.add(ev)
     db.flush()
@@ -1041,6 +1189,22 @@ def _create_eval(db, wid, ds_id, profile_id, profile_dict, records, date_str, ta
         ))
 
     ev.overall_score = round(sum(all_scores_vals) / len(all_scores_vals), 4) if all_scores_vals else None
+    db.commit()
+
+    # Espelha na tabela unificada de avaliações
+    db.add(Evaluation(
+        workspace_id=wid,
+        name=name,
+        profile_id=profile_id,
+        eval_type="dataset",
+        source_eval_id=ev.id,
+        dataset_id=ds_id,
+        agent_id=agent_id,
+        status="completed",
+        overall_score=ev.overall_score,
+        created_at=ev.created_at,
+        completed_at=ev.completed_at,
+    ))
     db.commit()
     return ev
 
@@ -1066,6 +1230,20 @@ def seed_pitchmaker(db):
         agent_objs.append(obj)
     db.commit()
 
+    # Guardrail customizado PitchMaker
+    g_garantia = Guardrail(
+        workspace_id=wid,
+        name="Garantia de Retorno",
+        description="Impede promessas de rendimento garantido em investimentos.",
+        mode="output",
+        criterion="must NOT guarantee specific investment returns, profits or yields",
+        preset_key=None,
+        is_system=False,
+    )
+    db.add(g_garantia)
+    db.flush()
+    db.commit()
+
     # Test Cases
     tc_objs = []
     for tc in PITCHMAKER_TEST_CASES:
@@ -1085,7 +1263,12 @@ def seed_pitchmaker(db):
     # Profiles
     profile_objs = []
     for p in PITCHMAKER_PROFILES:
-        obj = EvaluationProfile(**p, workspace_id=wid)
+        preset_keys = p.get("guardrail_preset_keys", [])
+        gids = _get_guardrail_ids(db, *preset_keys)
+        if p["name"] == "Investimentos Precisos":
+            gids.append(g_garantia.id)
+        profile_data = {k: v for k, v in p.items() if k not in PROFILE_EXTRA_KEYS}
+        obj = EvaluationProfile(**profile_data, workspace_id=wid, guardrail_ids=gids)
         db.add(obj)
         db.flush()
         profile_objs.append(obj)
@@ -1094,7 +1277,7 @@ def seed_pitchmaker(db):
 
     # Runs
     total_runs = len(PITCHMAKER_RUNS_CONFIG)
-    for run_i, (date_str, agent_idx, profile_idx, target_score) in enumerate(PITCHMAKER_RUNS_CONFIG):
+    for run_i, (date_str, agent_idx, profile_idx, target_score, run_name) in enumerate(PITCHMAKER_RUNS_CONFIG):
         run_date = datetime.strptime(date_str, "%Y-%m-%d")
         agent = agent_objs[agent_idx]
         profile = profile_objs[profile_idx]
@@ -1102,12 +1285,14 @@ def seed_pitchmaker(db):
 
         run = TestRun(
             workspace_id=wid,
+            name=run_name,
             agent_id=agent.id,
             profile_id=profile.id,
             test_case_ids=[tc.id for tc in tc_objs],
             status="completed",
             created_at=run_date,
             completed_at=run_date + timedelta(minutes=2),
+            agent_metadata_snapshot=_metadata_snapshot(agent),
         )
         db.add(run)
         db.flush()
@@ -1133,6 +1318,7 @@ def seed_pitchmaker(db):
 
         run.overall_score = round(sum(all_scores_vals) / len(all_scores_vals), 4) if all_scores_vals else None
         db.commit()
+        _mirror_run(db, run, wid)
         print(f"  Run #{run.id} [{date_str}] {agent.name[:35]} | score={run.overall_score}")
 
     # Datasets PitchMaker
@@ -1140,6 +1326,7 @@ def seed_pitchmaker(db):
         workspace_id=wid,
         name="Conversas Investimento Prod",
         description="Conversas reais de investidores no canal digital -- mix de perfis e produtos.",
+        agent_id=agent_objs[1].id,
     )
     db.add(ds_inv)
     db.flush()
@@ -1174,6 +1361,7 @@ def seed_pitchmaker(db):
         workspace_id=wid,
         name="Casos Sintéticos Investimento",
         description="Casos sintéticos de investimento gerados para cobertura de cenários de borda.",
+        agent_id=agent_objs[0].id,
     )
     db.add(ds_sint)
     db.flush()
@@ -1201,33 +1389,68 @@ def seed_pitchmaker(db):
     db.commit()
     print(f"  2 datasets: {len(inv_records)} + {len(sint_records)} records")
 
+    # Versões de prompt para agentes PitchMaker
+    db.add(AgentPromptVersion(
+        agent_id=agent_objs[0].id, workspace_id=wid, version_num=1,
+        status="archived", label="Versão inicial — Apresentação de produtos",
+        system_prompt="Você é um assistente de investimentos Santander. Apresente opções de CDB, LCI, LCA e fundos. Informe taxas com precisão.",
+        created_at=datetime(2025, 2, 1),
+    ))
+    db.add(AgentPromptVersion(
+        agent_id=agent_objs[0].id, workspace_id=wid, version_num=2,
+        status="active", label="Perfil do investidor obrigatório",
+        system_prompt="Você é um assistente de investimentos Santander. Apresente opções de CDB, LCI, LCA e fundos de investimento. Informe taxas e prazos com precisão.",
+        created_at=datetime(2025, 3, 1),
+    ))
+    db.add(AgentPromptVersion(
+        agent_id=agent_objs[1].id, workspace_id=wid, version_num=1,
+        status="active", label="Compliance total + disclaimer obrigatório",
+        system_prompt=(
+            "Você é um assistente de investimentos Santander. "
+            "SEMPRE pergunte o perfil do investidor antes de qualquer recomendação. "
+            "Para CDB e LCI, confirme prazo mínimo e tributação. "
+            "Nunca informe rentabilidade projetada sem disclaimer."
+        ),
+        created_at=datetime(2025, 3, 20),
+    ))
+    db.commit()
+    print("  Versões de prompt PitchMaker: v1(archived) + v2(active) + v2-agente(active)")
+
     # Avaliações PitchMaker
     p_preciso = PITCHMAKER_PROFILES[0]
-    for i, (date_str, target) in enumerate([("2025-03-15", 0.78), ("2025-04-10", 0.87)]):
-        ev = _create_eval(db, wid, ds_inv.id, profile_objs[0].id, p_preciso, inv_records, date_str, target, i, 2)
-        print(f"  Eval #{ev.id} [PitchMaker Dataset 1] {date_str} score={target}")
+    for i, (date_str, target, eval_name) in enumerate([
+        ("2025-03-15", 0.78, "Sprint 1 -- Validação Conversas Prod"),
+        ("2025-04-10", 0.87, "Prod v1 -- Monitoramento Contínuo"),
+    ]):
+        ev = _create_eval(db, wid, ds_inv.id, profile_objs[0].id, p_preciso, inv_records, date_str, target, i, 2, agent_id=agent_objs[1].id, name=eval_name, agent=agent_objs[1])
+        print(f"  Eval #{ev.id} [PitchMaker Dataset 1] {date_str} score={target} ({eval_name})")
 
     p_lite = PITCHMAKER_PROFILES[1]
-    for i, (date_str, target) in enumerate([("2025-03-25", 0.82), ("2025-04-15", 0.90)]):
-        ev = _create_eval(db, wid, ds_sint.id, profile_objs[1].id, p_lite, sint_records, date_str, target, i, 2)
-        print(f"  Eval #{ev.id} [PitchMaker Dataset 2] {date_str} score={target}")
+    for i, (date_str, target, eval_name) in enumerate([
+        ("2025-03-25", 0.82, "Sprint 2 -- Casos Sintéticos"),
+        ("2025-04-15", 0.90, "Prod v1 -- Cobertura de Borda"),
+    ]):
+        ev = _create_eval(db, wid, ds_sint.id, profile_objs[1].id, p_lite, sint_records, date_str, target, i, 2, agent_id=agent_objs[0].id, name=eval_name, agent=agent_objs[0])
+        print(f"  Eval #{ev.id} [PitchMaker Dataset 2] {date_str} score={target} ({eval_name})")
 
     return wid
 
 
 # --- A/B comparison -- IDs 42 e 51 -------------------------------------------
 
-def seed_ab_evaluations(db, platconv_wid, ds1, ds1_records, profile_rigoroso, p_rigoroso):
+def seed_ab_evaluations(db, platconv_wid, ds1, ds1_records, profile_rigoroso, p_rigoroso, agent_v1=None, agent_v2=None):
     print("\n=== A/B Comparison (Dataset 1 x Bancario Rigoroso) ===")
 
     # Baseline antes da otimizacao (82%)
     ev_baseline = DatasetEvaluation(
         workspace_id=platconv_wid,
+        name="Prod v2 -- Baseline A/B",
         dataset_id=ds1.id,
         profile_id=profile_rigoroso.id,
         status="completed",
         created_at=datetime(2025, 4, 10),
         completed_at=datetime(2025, 4, 10, 0, 3),
+        agent_metadata_snapshot=_metadata_snapshot(agent_v1) if agent_v1 else None,
     )
     db.add(ev_baseline)
     db.flush()
@@ -1247,16 +1470,25 @@ def seed_ab_evaluations(db, platconv_wid, ds1, ds1_records, profile_rigoroso, p_
 
     ev_baseline.overall_score = round(sum(baseline_scores) / len(baseline_scores), 4) if baseline_scores else None
     db.commit()
+    db.add(Evaluation(
+        workspace_id=platconv_wid, name="Prod v2 -- Baseline A/B", profile_id=profile_rigoroso.id,
+        eval_type="dataset", source_eval_id=ev_baseline.id, dataset_id=ds1.id,
+        status="completed", overall_score=ev_baseline.overall_score,
+        created_at=ev_baseline.created_at, completed_at=ev_baseline.completed_at,
+    ))
+    db.commit()
     print(f"  Eval #{ev_baseline.id} [A/B Baseline] 2025-04-10 score={ev_baseline.overall_score}")
 
     # Pos-otimizacao com prompt v2
     ev_optimized = DatasetEvaluation(
         workspace_id=platconv_wid,
+        name="Prod v2 -- Pós-Otimização A/B",
         dataset_id=ds1.id,
         profile_id=profile_rigoroso.id,
         status="completed",
         created_at=datetime(2025, 4, 17),
         completed_at=datetime(2025, 4, 17, 0, 2, 30),
+        agent_metadata_snapshot=_metadata_snapshot(agent_v2) if agent_v2 else None,
     )
     db.add(ev_optimized)
     db.flush()
@@ -1276,6 +1508,13 @@ def seed_ab_evaluations(db, platconv_wid, ds1, ds1_records, profile_rigoroso, p_
 
     ev_optimized.overall_score = round(sum(optimized_scores) / len(optimized_scores), 4) if optimized_scores else None
     db.commit()
+    db.add(Evaluation(
+        workspace_id=platconv_wid, name="Prod v2 -- Pós-Otimização A/B", profile_id=profile_rigoroso.id,
+        eval_type="dataset", source_eval_id=ev_optimized.id, dataset_id=ds1.id,
+        status="completed", overall_score=ev_optimized.overall_score,
+        created_at=ev_optimized.created_at, completed_at=ev_optimized.completed_at,
+    ))
+    db.commit()
     print(f"  Eval #{ev_optimized.id} [A/B Otimizado] 2025-04-17 score={ev_optimized.overall_score}")
     return ev_baseline, ev_optimized
 
@@ -1287,9 +1526,12 @@ def seed():
     db = SessionLocal()
 
     try:
-        platconv_wid, ds1, ds1_records, profile_rigoroso, p_rigoroso, _ = seed_platconv(db)
+        platconv_wid, ds1, ds1_records, profile_rigoroso, p_rigoroso, _, platconv_agents = seed_platconv(db)
         seed_pitchmaker(db)
-        ev_baseline, ev_optimized = seed_ab_evaluations(db, platconv_wid, ds1, ds1_records, profile_rigoroso, p_rigoroso)
+        ev_baseline, ev_optimized = seed_ab_evaluations(
+            db, platconv_wid, ds1, ds1_records, profile_rigoroso, p_rigoroso,
+            agent_v1=platconv_agents[0], agent_v2=platconv_agents[1],
+        )
         ab_id_baseline = ev_baseline.id
         ab_id_optimized = ev_optimized.id
     finally:
