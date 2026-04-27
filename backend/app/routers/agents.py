@@ -1,17 +1,42 @@
 import json
 from datetime import datetime
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from ..database import get_db
-from ..models import Agent, TestRun, TestResult, AgentPromptVersion
-from ..schemas import AgentCreate, AgentOut, AgentPromptVersionOut, AgentPromptVersionUpdate
+from ..database import get_db, SessionLocal
+from ..models import Agent, TestRun, TestResult, AgentPromptVersion, PromptVersionComparison
+from ..schemas import AgentCreate, AgentOut, AgentPromptVersionOut
 from ..services.judge_llm import resolve_judge
 from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+
+def _generate_change_summary(version_id: int, prev_prompt: str, new_prompt: str):
+    """Background task: gera resumo LLM das diferenças entre duas versões do prompt."""
+    db = SessionLocal()
+    try:
+        judge = resolve_judge(db)
+        if judge is None:
+            return
+        prompt = (
+            "Você é um especialista em prompts de IA. Compare as duas versões do system prompt abaixo "
+            "e resuma em 1-2 frases em português quais foram as principais alterações funcionais. "
+            "Seja objetivo e direto. Responda apenas com o resumo, sem introduções.\n\n"
+            f"VERSÃO ANTERIOR:\n{prev_prompt}\n\n"
+            f"NOVA VERSÃO:\n{new_prompt}"
+        )
+        summary, _ = judge.generate(prompt)
+        ver = db.get(AgentPromptVersion, version_id)
+        if ver:
+            ver.change_summary = str(summary).strip()
+            db.commit()
+    except Exception:
+        pass
+    finally:
+        db.close()
 
 
 # ── Rotas estáticas primeiro (antes das dinâmicas com /{agent_id}) ──────────
@@ -156,6 +181,7 @@ def get_agent(agent_id: int, db: Session = Depends(get_db), workspace: Workspace
 def update_agent(
     agent_id: int,
     data: AgentCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
@@ -166,7 +192,8 @@ def update_agent(
 
     new_prompt = data.system_prompt
     if agent.system_prompt and new_prompt != agent.system_prompt:
-        # Arquiva a versão ativa atual
+        prev_prompt = agent.system_prompt
+
         current_active = db.query(AgentPromptVersion).filter(
             AgentPromptVersion.agent_id == agent_id,
             AgentPromptVersion.status == "active",
@@ -174,28 +201,31 @@ def update_agent(
         if current_active:
             current_active.status = "archived"
 
-        # Cria nova versão ativa com o novo conteúdo
         max_v = db.query(func.max(AgentPromptVersion.version_num)).filter(
             AgentPromptVersion.agent_id == agent_id
         ).scalar() or 0
-        db.add(AgentPromptVersion(
+        new_ver = AgentPromptVersion(
             agent_id=agent_id,
             workspace_id=workspace.workspace_id,
             system_prompt=new_prompt,
             version_num=max_v + 1,
             status="active",
             created_at=datetime.utcnow(),
-        ))
+        )
+        db.add(new_ver)
+        db.flush()
+        new_ver_id = new_ver.id
+        background_tasks.add_task(_generate_change_summary, new_ver_id, prev_prompt, new_prompt)
     elif new_prompt and not agent.system_prompt:
-        # Primeiro prompt: cria versão ativa
-        db.add(AgentPromptVersion(
+        new_ver = AgentPromptVersion(
             agent_id=agent_id,
             workspace_id=workspace.workspace_id,
             system_prompt=new_prompt,
             version_num=1,
             status="active",
             created_at=datetime.utcnow(),
-        ))
+        )
+        db.add(new_ver)
 
     for field, value in data.model_dump().items():
         setattr(agent, field, value)
@@ -221,14 +251,15 @@ def list_prompt_versions(
     )
 
 
-@router.post("/{agent_id}/prompt-versions/{ver_id}/rollback", response_model=AgentPromptVersionOut)
-def rollback_prompt(
+@router.post("/{agent_id}/prompt-versions/{ver_id}/restore", response_model=AgentOut)
+def restore_prompt_version(
     agent_id: int,
     ver_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Cria um novo RASCUNHO com o conteúdo da versão alvo (não ativa imediatamente)."""
+    """Restaura uma versão histórica: cria nova versão ativa com o conteúdo da versão alvo."""
     require_writer(workspace)
     agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
     if not agent:
@@ -240,45 +271,8 @@ def rollback_prompt(
     if not version:
         raise HTTPException(404, "Versão não encontrada")
 
-    max_v = db.query(func.max(AgentPromptVersion.version_num)).filter(
-        AgentPromptVersion.agent_id == agent_id
-    ).scalar() or 0
-    draft = AgentPromptVersion(
-        agent_id=agent_id,
-        workspace_id=workspace.workspace_id,
-        system_prompt=version.system_prompt,
-        version_num=max_v + 1,
-        status="draft",
-        label=f"Rascunho baseado na v{version.version_num}",
-        created_at=datetime.utcnow(),
-    )
-    db.add(draft)
-    db.commit()
-    db.refresh(draft)
-    return draft
+    prev_prompt = agent.system_prompt or ""
 
-
-@router.post("/{agent_id}/prompt-versions/{ver_id}/activate", response_model=AgentOut)
-def activate_prompt_version(
-    agent_id: int,
-    ver_id: int,
-    db: Session = Depends(get_db),
-    workspace: WorkspaceContext = Depends(get_current_workspace),
-):
-    """Promove um rascunho para ativo (arquiva o ativo atual). Atualiza Agent.system_prompt."""
-    require_writer(workspace)
-    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
-    if not agent:
-        raise HTTPException(404, "Agente não encontrado")
-    draft = db.query(AgentPromptVersion).filter(
-        AgentPromptVersion.id == ver_id,
-        AgentPromptVersion.agent_id == agent_id,
-        AgentPromptVersion.status == "draft",
-    ).first()
-    if not draft:
-        raise HTTPException(404, "Rascunho não encontrado (somente rascunhos podem ser ativados)")
-
-    # Arquiva versão ativa atual
     current_active = db.query(AgentPromptVersion).filter(
         AgentPromptVersion.agent_id == agent_id,
         AgentPromptVersion.status == "active",
@@ -286,57 +280,86 @@ def activate_prompt_version(
     if current_active:
         current_active.status = "archived"
 
-    draft.status = "active"
-    agent.system_prompt = draft.system_prompt
+    max_v = db.query(func.max(AgentPromptVersion.version_num)).filter(
+        AgentPromptVersion.agent_id == agent_id
+    ).scalar() or 0
+    new_ver = AgentPromptVersion(
+        agent_id=agent_id,
+        workspace_id=workspace.workspace_id,
+        system_prompt=version.system_prompt,
+        version_num=max_v + 1,
+        status="active",
+        label=f"Restaurado da v{version.version_num}",
+        created_at=datetime.utcnow(),
+    )
+    db.add(new_ver)
+    db.flush()
+    new_ver_id = new_ver.id
+    agent.system_prompt = version.system_prompt
     db.commit()
     db.refresh(agent)
+    if prev_prompt:
+        background_tasks.add_task(_generate_change_summary, new_ver_id, prev_prompt, version.system_prompt)
     return agent
 
 
-@router.patch("/{agent_id}/prompt-versions/{ver_id}", response_model=AgentPromptVersionOut)
-def update_draft_version(
+@router.get("/{agent_id}/prompt-versions/compare")
+def compare_prompt_versions(
     agent_id: int,
-    ver_id: int,
-    data: AgentPromptVersionUpdate,
+    v1: int,
+    v2: int,
     db: Session = Depends(get_db),
     workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Atualiza label e/ou conteúdo de um rascunho."""
-    require_writer(workspace)
-    draft = db.query(AgentPromptVersion).filter(
-        AgentPromptVersion.id == ver_id,
-        AgentPromptVersion.agent_id == agent_id,
-        AgentPromptVersion.status == "draft",
-    ).first()
-    if not draft:
-        raise HTTPException(404, "Rascunho não encontrado (somente rascunhos podem ser editados)")
-    if data.label is not None:
-        draft.label = data.label
-    if data.system_prompt is not None:
-        draft.system_prompt = data.system_prompt
-    db.commit()
-    db.refresh(draft)
-    return draft
+    """Retorna duas versões e um resumo LLM das diferenças. O resumo é cacheado no banco."""
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
+    if not agent:
+        raise HTTPException(404, "Agente não encontrado")
 
-
-@router.delete("/{agent_id}/prompt-versions/{ver_id}", status_code=204)
-def delete_draft_version(
-    agent_id: int,
-    ver_id: int,
-    db: Session = Depends(get_db),
-    workspace: WorkspaceContext = Depends(get_current_workspace),
-):
-    """Exclui um rascunho (não permite excluir versões ativas ou arquivadas)."""
-    require_writer(workspace)
-    draft = db.query(AgentPromptVersion).filter(
-        AgentPromptVersion.id == ver_id,
-        AgentPromptVersion.agent_id == agent_id,
-        AgentPromptVersion.status == "draft",
+    ver_a = db.query(AgentPromptVersion).filter(
+        AgentPromptVersion.id == v1, AgentPromptVersion.agent_id == agent_id
     ).first()
-    if not draft:
-        raise HTTPException(404, "Rascunho não encontrado (somente rascunhos podem ser excluídos)")
-    db.delete(draft)
-    db.commit()
+    ver_b = db.query(AgentPromptVersion).filter(
+        AgentPromptVersion.id == v2, AgentPromptVersion.agent_id == agent_id
+    ).first()
+    if not ver_a or not ver_b:
+        raise HTTPException(404, "Uma ou ambas as versões não foram encontradas")
+
+    # Verifica cache (ordem canônica: menor id primeiro)
+    lo, hi = min(v1, v2), max(v1, v2)
+    cached = db.query(PromptVersionComparison).filter(
+        PromptVersionComparison.v1_id == lo,
+        PromptVersionComparison.v2_id == hi,
+    ).first()
+
+    summary = cached.summary if cached else None
+
+    if summary is None:
+        judge = resolve_judge(db)
+        if judge:
+            try:
+                prompt = (
+                    "Você é um especialista em prompts de IA. Compare as duas versões do system prompt abaixo "
+                    "e resuma em 1-2 frases em português quais foram as principais diferenças funcionais. "
+                    "Seja objetivo e direto. Responda apenas com o resumo, sem introduções.\n\n"
+                    f"VERSÃO A (v{ver_a.version_num}):\n{ver_a.system_prompt}\n\n"
+                    f"VERSÃO B (v{ver_b.version_num}):\n{ver_b.system_prompt}"
+                )
+                result, _ = judge.generate(prompt)
+                summary = str(result).strip()
+                db.add(PromptVersionComparison(
+                    v1_id=lo, v2_id=hi, summary=summary,
+                    created_at=datetime.utcnow(),
+                ))
+                db.commit()
+            except Exception:
+                pass
+
+    return {
+        "version_a": AgentPromptVersionOut.model_validate(ver_a),
+        "version_b": AgentPromptVersionOut.model_validate(ver_b),
+        "summary": summary,
+    }
 
 
 @router.delete("/{agent_id}", status_code=204)
@@ -431,3 +454,35 @@ def optimize_prompt(
         "reasoning": data.get("reasoning", ""),
         "failed_cases_analyzed": len(failed_cases),
     }
+
+
+class PlaygroundChatRequest(BaseModel):
+    message: str
+    session_id: str = ""
+
+
+@router.post("/{agent_id}/chat")
+def playground_chat(
+    agent_id: int,
+    req: PlaygroundChatRequest,
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    agent = db.query(Agent).filter(Agent.id == agent_id, Agent.workspace_id == workspace.workspace_id).first()
+    if not agent:
+        raise HTTPException(404, "Agente não encontrado")
+    from ..services.agent_caller import call_agent
+    reply = call_agent(
+        url=agent.url,
+        api_key=agent.api_key,
+        message=req.message,
+        request_body=agent.request_body,
+        output_field=agent.output_field,
+        connection_type=agent.connection_type,
+        session_id=req.session_id,
+        token_url=agent.token_url,
+        token_request_body=agent.token_request_body,
+        token_output_field=agent.token_output_field,
+        token_header_name=agent.token_header_name,
+    )
+    return {"reply": reply, "session_id": req.session_id}

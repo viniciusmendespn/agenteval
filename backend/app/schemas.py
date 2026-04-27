@@ -27,17 +27,13 @@ class AgentPromptVersionOut(BaseModel):
     id: int
     version_num: int
     system_prompt: str
-    status: str = "active"   # "draft" | "active" | "archived"
+    status: str = "active"   # "active" | "archived"
     label: Optional[str] = None
+    change_summary: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
-
-
-class AgentPromptVersionUpdate(BaseModel):
-    label: Optional[str] = None
-    system_prompt: Optional[str] = None
 
 
 # --- Agent ---
@@ -74,6 +70,7 @@ class AgentCreate(BaseModel):
     environment: str = "experiment"
     tags: list[str] = []
     extra_metadata: dict = {}
+    agent_notes: Optional[str] = None
 
 class AgentOut(AgentCreate):
     id: int

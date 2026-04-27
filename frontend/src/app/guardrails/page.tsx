@@ -50,6 +50,7 @@ export default function GuardrailsPage() {
     setForm({ name: g.name, description: g.description || "", mode: g.mode as typeof form.mode, criterion: g.criterion })
     setError("")
     setShowForm(true)
+    document.querySelector("main")?.scrollTo({ top: 0, behavior: "smooth" })
   }
 
   const cancelForm = () => {
@@ -97,7 +98,7 @@ export default function GuardrailsPage() {
   const customGuardrails = guardrails.filter(g => !g.is_system)
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-8">
+    <div className="max-w-4xl space-y-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Guardrails</h1>
@@ -107,7 +108,7 @@ export default function GuardrailsPage() {
         </div>
         <button
           onClick={openCreate}
-          className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition"
+          className="flame-button"
         >
           + Novo Guardrail
         </button>
@@ -168,13 +169,13 @@ export default function GuardrailsPage() {
             <button
               onClick={save}
               disabled={saving}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 transition"
+              className="flame-button disabled:opacity-50"
             >
               {saving ? "Salvando..." : editingId !== null ? "Salvar alterações" : "Criar guardrail"}
             </button>
             <button
               onClick={cancelForm}
-              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition"
+              className="flame-button-secondary"
             >
               Cancelar
             </button>
@@ -260,14 +261,14 @@ function GuardrailCard({
         <div className="flex gap-1 shrink-0">
           <button
             onClick={onEdit}
-            className="px-3 py-1 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+            className="flame-button-secondary min-h-8 px-3 text-xs"
           >
             Editar
           </button>
           <button
             onClick={onDelete}
             disabled={deleting}
-            className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded-lg hover:bg-red-100 disabled:opacity-50 transition"
+            className="flame-button min-h-8 px-3 text-xs disabled:opacity-50"
           >
             {deleting ? "..." : "Excluir"}
           </button>

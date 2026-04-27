@@ -3,8 +3,9 @@
 import { useState, useRef, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { MessageSquare, X, Send, Bot, User, Loader2 } from "lucide-react"
-import { API, workspaceHeaders } from "@/lib/api"
+import { MessageSquare, X, Send, Bot, User, Loader2, CheckSquare, Square, Plus, Check } from "lucide-react"
+import { toast } from "sonner"
+import { API, workspaceHeaders, createTestCase } from "@/lib/api"
 
 type Message = {
   role: "user" | "assistant"
@@ -13,20 +14,252 @@ type Message = {
   tokens?: number
 }
 
+type TestCaseSuggestion = {
+  title: string
+  type?: string
+  input: string
+  expected_output?: string
+  context?: string[]
+  tags?: string
+  turns?: { input: string; expected_output?: string }[] | null
+}
+
+type SuggestionsBlock = {
+  agent_id: number
+  cases: TestCaseSuggestion[]
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  happy_path: "Fluxo feliz",
+  edge_case: "Caso extremo",
+  scope_escape: "Fuga de escopo",
+  ambiguity: "Ambiguidade",
+  error: "Erro",
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  happy_path: "bg-green-50 text-green-700 border-green-200",
+  edge_case: "bg-amber-50 text-amber-700 border-amber-200",
+  scope_escape: "bg-red-50 text-red-700 border-red-200",
+  ambiguity: "bg-purple-50 text-purple-700 border-purple-200",
+  error: "bg-gray-50 text-gray-600 border-gray-200",
+}
+
+function parseSuggestions(content: string): { before: string; block: SuggestionsBlock | null; after: string } {
+  const match = content.match(/```json\s*([\s\S]*?)\s*```/)
+  if (!match) return { before: content, block: null, after: "" }
+  try {
+    const parsed = JSON.parse(match[1])
+    if (parsed.__type === "test_case_suggestions" && Array.isArray(parsed.cases)) {
+      const idx = content.indexOf("```json")
+      const end = content.indexOf("```", idx + 7) + 3
+      return {
+        before: content.slice(0, idx).trim(),
+        block: { agent_id: parsed.agent_id, cases: parsed.cases },
+        after: content.slice(end).trim(),
+      }
+    }
+  } catch {
+    // not a suggestions block
+  }
+  return { before: content, block: null, after: "" }
+}
+
+function SuggestionCards({ block }: { block: SuggestionsBlock }) {
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(block.cases.map((_, i) => i)))
+  const [created, setCreated] = useState<Set<number>>(new Set())
+  const [creating, setCreating] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  function toggle(i: number) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  }
+
+  async function handleCreate(indices: number[]) {
+    const toCreate = indices.filter(i => !created.has(i))
+    if (!toCreate.length) return
+    setCreating(true)
+    setErrorMsg(null)
+    const failed: { index: number; reason: string }[] = []
+    let successCount = 0
+    for (const i of toCreate) {
+      const c = block.cases[i]
+      try {
+        const turns = c.turns && c.turns.length > 0 ? c.turns : undefined
+        await createTestCase({
+          title: c.title,
+          input: turns ? turns[0].input : c.input,
+          expected_output: c.expected_output || undefined,
+          context: c.context && c.context.length > 0 ? c.context : undefined,
+          tags: c.tags || undefined,
+          turns: turns,
+        })
+        setCreated(prev => new Set([...prev, i]))
+        successCount++
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
+        console.error(`[SuggestionCards] falha ao criar caso "${c.title}":`, reason)
+        failed.push({ index: i, reason })
+      }
+    }
+    setCreating(false)
+    if (successCount > 0 && failed.length === 0) {
+      toast.success(`${successCount} caso${successCount > 1 ? "s" : ""} de teste criado${successCount > 1 ? "s" : ""} com sucesso`)
+      setTimeout(() => { window.location.href = "/test-cases" }, 1200)
+    } else if (successCount > 0 && failed.length > 0) {
+      toast.success(`${successCount} criado${successCount > 1 ? "s" : ""}`)
+      setErrorMsg(`${failed.length} caso(s) falharam: ${failed.map(f => f.reason).join("; ")}`)
+    } else {
+      const reason = failed[0]?.reason ?? "erro desconhecido"
+      setErrorMsg(`Falha ao criar: ${reason}`)
+      toast.error("Erro ao criar casos de teste")
+    }
+  }
+
+  const pendingSelected = [...selected].filter(i => !created.has(i))
+  const allIndices = block.cases.map((_, i) => i)
+  const pendingAll = allIndices.filter(i => !created.has(i))
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">
+        {block.cases.length} sugestões · selecione as que deseja criar
+      </p>
+
+      {block.cases.map((c, i) => {
+        const isSelected = selected.has(i)
+        const isCreated = created.has(i)
+        const isMultiTurn = c.turns && c.turns.length > 0
+        const typeColor = TYPE_COLORS[c.type ?? ""] || "bg-gray-50 text-gray-600 border-gray-200"
+        const typeLabel = TYPE_LABELS[c.type ?? ""] || c.type
+
+        return (
+          <div
+            key={i}
+            onClick={() => !isCreated && toggle(i)}
+            className={`rounded-lg border p-2.5 cursor-pointer transition-colors text-xs ${
+              isCreated
+                ? "border-green-200 bg-green-50 cursor-default"
+                : isSelected
+                ? "border-[var(--santander-red)] bg-red-50/30"
+                : "border-gray-200 bg-white hover:border-gray-300"
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              <div className="mt-0.5 shrink-0">
+                {isCreated
+                  ? <Check size={14} className="text-green-600" />
+                  : isSelected
+                  ? <CheckSquare size={14} className="text-[var(--santander-red)]" />
+                  : <Square size={14} className="text-gray-300" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                  <span className="font-semibold text-gray-800 leading-snug">{c.title}</span>
+                  {isCreated && <span className="text-[10px] text-green-600 font-medium">Criado ✓</span>}
+                </div>
+                <div className="flex items-center gap-1 flex-wrap mb-1">
+                  {typeLabel && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium ${typeColor}`}>
+                      {typeLabel}
+                    </span>
+                  )}
+                  {isMultiTurn && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200 font-medium">
+                      multi-turn · {c.turns!.length} turnos
+                    </span>
+                  )}
+                  {c.tags && (
+                    <span className="text-[10px] text-gray-400">{c.tags}</span>
+                  )}
+                </div>
+                <p className="text-gray-500 truncate">
+                  <span className="text-gray-400">Entrada: </span>
+                  {isMultiTurn ? c.turns![0].input : c.input}
+                </p>
+                {c.expected_output && (
+                  <p className="text-gray-400 truncate mt-0.5">
+                    <span>Esperado: </span>{c.expected_output}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+
+      {errorMsg && <p className="text-[11px] text-red-500 pt-1">{errorMsg}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => handleCreate(pendingSelected)}
+          disabled={creating || pendingSelected.length === 0}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-semibold rounded-lg bg-[var(--santander-red)] text-white hover:bg-[var(--santander-red-dark)] disabled:opacity-40 transition-colors"
+        >
+          <Plus size={12} />
+          {creating ? "Criando..." : `Criar selecionados (${pendingSelected.length})`}
+        </button>
+        {pendingAll.length > pendingSelected.length && (
+          <button
+            onClick={() => handleCreate(pendingAll)}
+            disabled={creating || pendingAll.length === 0}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >
+            Criar todos ({pendingAll.length})
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function FloatingChat() {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content:
-        "Olá! Sou o assistente do Santander AgentEval. Posso ajudar você a criar agentes, perfis de avaliação, casos de teste e iniciar execuções. O que você precisa?",
+        "Olá! Sou seu assistente de QA. Posso sugerir casos de teste profissionais para seus agentes.\n\nMe diga qual agente você quer testar, ou peça para eu listar os agentes disponíveis.",
       timestamp: new Date(),
     },
   ])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
+  const [loadingStatus, setLoadingStatus] = useState("")
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const LOADING_STEPS = [
+    "Processando sua mensagem...",
+    "Consultando informações do agente...",
+    "Gerando cenários de teste com IA...",
+    "Estruturando casos com expected output...",
+    "Quase pronto...",
+  ]
+
+  function startLoadingSteps() {
+    let step = 0
+    setLoadingStatus(LOADING_STEPS[0])
+    function advance() {
+      step = Math.min(step + 1, LOADING_STEPS.length - 1)
+      setLoadingStatus(LOADING_STEPS[step])
+      if (step < LOADING_STEPS.length - 1) {
+        loadingTimerRef.current = setTimeout(advance, 4000)
+      }
+    }
+    loadingTimerRef.current = setTimeout(advance, 4000)
+  }
+
+  function stopLoadingSteps() {
+    if (loadingTimerRef.current) clearTimeout(loadingTimerRef.current)
+    setLoadingStatus("")
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -47,6 +280,7 @@ export default function FloatingChat() {
     setMessages(newMessages)
     setInput("")
     setLoading(true)
+    startLoadingSteps()
 
     try {
       const res = await fetch(`${API}/chat/`, {
@@ -74,6 +308,7 @@ export default function FloatingChat() {
         },
       ])
     } finally {
+      stopLoadingSteps()
       setLoading(false)
     }
   }
@@ -85,16 +320,54 @@ export default function FloatingChat() {
     }
   }
 
+  function renderAssistantMessage(content: string) {
+    const { before, block, after } = parseSuggestions(content)
+    return (
+      <>
+        {before && (
+          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-1 prose-code:text-xs">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                a: ({ href, children }) => (
+                  <a
+                    href={href}
+                    className="text-[var(--flame-teal)] underline underline-offset-2 hover:text-[var(--flame-teal-dark)] font-medium"
+                    {...(href?.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                  >
+                    {children}
+                  </a>
+                ),
+              }}
+            >
+              {before}
+            </ReactMarkdown>
+          </div>
+        )}
+        {block && <SuggestionCards block={block} />}
+        {after && (
+          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 mt-2">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{after}</ReactMarkdown>
+          </div>
+        )}
+        {!before && !block && !after && (
+          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-1 prose-code:text-xs">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          </div>
+        )}
+      </>
+    )
+  }
+
   return (
     <>
-      {/* Painel de chat */}
       {open && (
-        <div className="fixed bottom-20 right-6 z-50 w-[380px] max-h-[600px] flex flex-col bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden">
+        <div className="fixed bottom-20 right-6 z-50 w-[520px] flex flex-col bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden" style={{ height: "calc(100vh - 6rem)", maxHeight: "780px" }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-[var(--santander-red)] text-white shrink-0">
             <div className="flex items-center gap-2">
               <Bot size={18} />
-              <span className="font-semibold text-sm">Assistente Santander AgentEval</span>
+              <span className="font-semibold text-sm">Assistente de QA</span>
             </div>
             <button
               onClick={() => setOpen(false)}
@@ -105,46 +378,30 @@ export default function FloatingChat() {
           </div>
 
           {/* Mensagens */}
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-0">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-3 min-h-0">
             {messages.map((m, i) => (
               <div key={i} className={`flex flex-col gap-0.5 ${m.role === "user" ? "items-end" : "items-start"}`}>
-                <div className={`flex gap-2 ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                <div className={`flex gap-2 min-w-0 w-full ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
                   <div
                     className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-                      m.role === "user" ? "bg-white border border-red-200 text-red-600" : "bg-white border border-gray-200 text-[var(--flame-teal)]"
+                      m.role === "user"
+                        ? "bg-white border border-red-200 text-red-600"
+                        : "bg-white border border-gray-200 text-[var(--flame-teal)]"
                     }`}
                   >
                     {m.role === "user" ? <User size={14} /> : <Bot size={14} />}
                   </div>
                   <div
-                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                    className={`min-w-0 rounded-2xl px-3 py-2 text-sm leading-relaxed ${
                       m.role === "user"
-                        ? "bg-[var(--santander-red)] text-white rounded-tr-sm"
-                        : "bg-gray-100 text-gray-800 rounded-tl-sm"
+                        ? "max-w-[85%] bg-[var(--santander-red)] text-white rounded-tr-sm"
+                        : "flex-1 bg-gray-100 text-gray-800 rounded-tl-sm"
                     }`}
                   >
-                    {m.role === "assistant" ? (
-                      <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-1 prose-code:text-xs">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            a: ({ href, children }) => (
-                              <a
-                                href={href}
-                                className="text-[var(--flame-teal)] underline underline-offset-2 hover:text-[var(--flame-teal-dark)] font-medium"
-                                {...(href?.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                              >
-                                {children}
-                              </a>
-                            ),
-                          }}
-                        >
-                          {m.content}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <span className="whitespace-pre-wrap">{m.content}</span>
-                    )}
+                    {m.role === "assistant"
+                      ? renderAssistantMessage(m.content)
+                      : <span className="whitespace-pre-wrap">{m.content}</span>
+                    }
                   </div>
                 </div>
                 {(m.timestamp || m.tokens) && (
@@ -161,12 +418,15 @@ export default function FloatingChat() {
             ))}
 
             {loading && (
-              <div className="flex gap-2">
+              <div className="flex gap-2 min-w-0 w-full">
                 <div className="shrink-0 w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-[var(--flame-teal)]">
                   <Bot size={14} />
                 </div>
-                <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3 py-2">
-                  <Loader2 size={16} className="animate-spin text-gray-400" />
+                <div className="bg-gray-100 rounded-2xl rounded-tl-sm px-3 py-2 flex items-center gap-2 min-w-0">
+                  <Loader2 size={14} className="animate-spin text-gray-400 shrink-0" />
+                  {loadingStatus && (
+                    <span className="text-xs text-gray-500 truncate">{loadingStatus}</span>
+                  )}
                 </div>
               </div>
             )}

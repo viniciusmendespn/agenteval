@@ -167,6 +167,13 @@ def compare_runs(
     if not run_a or not run_b:
         raise HTTPException(404, "Uma ou ambas execuções não encontradas")
 
+    profiles = {
+        p.id: p
+        for p in db.query(EvaluationProfile).filter(
+            EvaluationProfile.id.in_([run_a.profile_id, run_b.profile_id])
+        ).all()
+    }
+
     agent_names = {
         a.id: a.name
         for a in db.query(Agent).filter(Agent.workspace_id == workspace.workspace_id).all()
@@ -231,6 +238,7 @@ def compare_runs(
             "created_at": run_a.created_at.isoformat() if run_a.created_at else None,
             "total_cases": len(run_a.test_case_ids or []),
             "agent_metadata_snapshot": run_a.agent_metadata_snapshot,
+            "criteria": profiles[run_a.profile_id].criteria if run_a.profile_id and run_a.profile_id in profiles else [],
         },
         "run_b": {
             "id": run_b.id,
@@ -239,6 +247,7 @@ def compare_runs(
             "created_at": run_b.created_at.isoformat() if run_b.created_at else None,
             "total_cases": len(run_b.test_case_ids or []),
             "agent_metadata_snapshot": run_b.agent_metadata_snapshot,
+            "criteria": profiles[run_b.profile_id].criteria if run_b.profile_id and run_b.profile_id in profiles else [],
         },
         "metric_comparison": metric_comparison,
         "cases": cases,
@@ -293,6 +302,7 @@ def _build_timeline_points(evals: list, db: Session) -> list[dict]:
         if point_type == "dataset_eval" and ev.dataset_id:
             dataset = db.get(Dataset, ev.dataset_id)
             point["dataset_name"] = dataset.name if dataset else f"Dataset #{ev.dataset_id}"
+            point["dataset_id"] = ev.dataset_id
         points.append(point)
     return points
 

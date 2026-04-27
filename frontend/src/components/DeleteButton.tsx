@@ -19,35 +19,39 @@ interface Props {
   id: number
   path: string
   onDeleted?: () => void
+  onDeleteStart?: () => void
+  onDeleteUndo?: () => void
 }
 
-export default function DeleteButton({ id, path, onDeleted }: Props) {
+export default function DeleteButton({ id, path, onDeleted, onDeleteStart, onDeleteUndo }: Props) {
   const router = useRouter()
   const label = LABELS[path] || "Item"
 
   async function handleDelete() {
     let undone = false
+    onDeleteStart?.()
 
-    const toastId = toast.success(`${label} excluído`, {
+    toast.success(`${label} excluído`, {
       duration: 5000,
       action: {
         label: "Desfazer",
-        onClick: () => { undone = true },
+        onClick: () => {
+          undone = true
+          onDeleteUndo?.()
+        },
       },
     })
 
     await new Promise(r => setTimeout(r, 5000))
 
-    if (undone) {
-      toast.dismiss(toastId)
-      return
-    }
+    if (undone) return
 
     try {
       await fetch(`${API}${path}/${id}`, { method: "DELETE", headers: workspaceHeaders(false) })
       if (onDeleted) onDeleted()
       else router.refresh()
     } catch {
+      onDeleteUndo?.()
       toastError("Erro ao excluir. Tente novamente.")
     }
   }

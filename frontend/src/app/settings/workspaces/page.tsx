@@ -44,17 +44,15 @@ export default function WorkspaceSettingsPage() {
     setSaving(true)
     setError(null)
     try {
-      const workspace = await createWorkspace({
+      await createWorkspace({
         name: name.trim(),
         slug: slug.trim() || undefined,
       })
-      setActiveWorkspaceId(workspace.id)
       setName("")
       setSlug("")
       setOpen(false)
-      toast.success("Workspace criado")
+      toast.success("Workspace criado — clique em Ativar para usá-lo")
       await getWorkspaces().then(items => setWorkspaces(items.filter(item => item.slug !== "default")))
-      setActiveId(String(workspace.id))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao criar workspace")
       toast.error("Erro ao criar workspace")

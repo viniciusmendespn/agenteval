@@ -194,6 +194,19 @@ def _migrate():
             """))
         if "label" not in apv_cols and insp.has_table("agent_prompt_versions"):
             conn.execute(text("ALTER TABLE agent_prompt_versions ADD COLUMN label TEXT"))
+        if "change_summary" not in apv_cols and insp.has_table("agent_prompt_versions"):
+            conn.execute(text("ALTER TABLE agent_prompt_versions ADD COLUMN change_summary TEXT"))
+
+        # Cache de comparações entre versões de prompt
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS prompt_version_comparisons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                v1_id INTEGER NOT NULL,
+                v2_id INTEGER NOT NULL,
+                summary TEXT NOT NULL,
+                created_at DATETIME
+            )
+        """))
 
         # Agent: metadados para comparação
         ag_cols_fresh = {c["name"] for c in insp.get_columns("agents")}
@@ -205,6 +218,7 @@ def _migrate():
             ("environment",     "TEXT DEFAULT 'experiment'"),
             ("tags",            "JSON"),
             ("extra_metadata",  "JSON"),
+            ("agent_notes",     "TEXT"),
         ]:
             if col not in ag_cols_fresh:
                 conn.execute(text(f"ALTER TABLE agents ADD COLUMN {col} {definition}"))

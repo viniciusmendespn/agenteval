@@ -466,10 +466,12 @@ export default function EvolutionPage() {
                           <a href={`/runs/${p.id}`} className="text-blue-600 hover:underline">
                             Run #{p.id}
                           </a>
-                        ) : dsName ? (
-                          <span className="text-gray-700">Aval #{p.id}</span>
+                        ) : p.dataset_id ? (
+                          <a href={`/datasets/${p.dataset_id}/evaluations/${p.id}`} className="text-blue-600 hover:underline">
+                            Aval #{p.id}
+                          </a>
                         ) : (
-                          `Aval #${p.id}`
+                          <span className="text-gray-700">Aval #{p.id}</span>
                         )}
                       </td>
                       {hasBothTypes && (

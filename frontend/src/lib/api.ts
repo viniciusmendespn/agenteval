@@ -88,6 +88,7 @@ export type Agent = {
   environment: string
   tags: string[]
   extra_metadata: Record<string, unknown>
+  agent_notes?: string | null
   created_at: string
 }
 
@@ -181,8 +182,8 @@ export type RunBreakdown = {
 }
 
 export type RunComparison = {
-  run_a: { id: number; agent_name: string; score?: number | null; created_at: string; total_cases: number; agent_metadata_snapshot?: AgentMetadataSnapshot | null }
-  run_b: { id: number; agent_name: string; score?: number | null; created_at: string; total_cases: number; agent_metadata_snapshot?: AgentMetadataSnapshot | null }
+  run_a: { id: number; agent_name: string; score?: number | null; created_at: string; total_cases: number; agent_metadata_snapshot?: AgentMetadataSnapshot | null; criteria?: string[] }
+  run_b: { id: number; agent_name: string; score?: number | null; created_at: string; total_cases: number; agent_metadata_snapshot?: AgentMetadataSnapshot | null; criteria?: string[] }
   metric_comparison: { metric: string; score_a?: number | null; score_b?: number | null; delta?: number | null }[]
   cases: {
     test_case_id: number
@@ -246,9 +247,16 @@ export type AgentPromptVersion = {
   id: number
   version_num: number
   system_prompt: string
-  status: "draft" | "active" | "archived"
+  status: "active" | "archived"
   label?: string | null
+  change_summary?: string | null
   created_at: string
+}
+
+export type PromptVersionCompare = {
+  version_a: AgentPromptVersion
+  version_b: AgentPromptVersion
+  summary: string | null
 }
 
 export type Dataset = {
@@ -334,14 +342,10 @@ export const optimizeAgentPrompt = (id: number) =>
   )
 export const getAgentPromptVersions = (id: number) =>
   request<AgentPromptVersion[]>(`/agents/${id}/prompt-versions`)
-export const rollbackAgentPrompt = (agentId: number, verId: number) =>
-  request<AgentPromptVersion>(`/agents/${agentId}/prompt-versions/${verId}/rollback`, { method: "POST" })
-export const activatePromptVersion = (agentId: number, verId: number) =>
-  request<Agent>(`/agents/${agentId}/prompt-versions/${verId}/activate`, { method: "POST" })
-export const updateDraftVersion = (agentId: number, verId: number, data: { label?: string; system_prompt?: string }) =>
-  request<AgentPromptVersion>(`/agents/${agentId}/prompt-versions/${verId}`, { method: "PATCH", body: JSON.stringify(data) })
-export const deletePromptVersion = (agentId: number, verId: number) =>
-  request<void>(`/agents/${agentId}/prompt-versions/${verId}`, { method: "DELETE" })
+export const restorePromptVersion = (agentId: number, verId: number) =>
+  request<Agent>(`/agents/${agentId}/prompt-versions/${verId}/restore`, { method: "POST" })
+export const comparePromptVersions = (agentId: number, v1: number, v2: number) =>
+  request<PromptVersionCompare>(`/agents/${agentId}/prompt-versions/compare?v1=${v1}&v2=${v2}`)
 
 // --- Guardrails ---
 export const getGuardrails = () => request<Guardrail[]>("/guardrails/")
@@ -363,6 +367,12 @@ export const previewResponse = (data: {
     connection_type: string; raw_response?: unknown; sample_events?: unknown[]
     extracted?: string | null; extract_error?: string | null; error?: string
   }>("/agents/preview", { method: "POST", body: JSON.stringify(data) })
+
+export const playgroundChat = (agentId: number, message: string, sessionId: string) =>
+  request<{ reply: string; session_id: string }>(`/agents/${agentId}/chat`, {
+    method: "POST",
+    body: JSON.stringify({ message, session_id: sessionId }),
+  })
 
 // --- Test Cases ---
 export const getTestCases = () => request<TestCase[]>("/test-cases/")
@@ -537,6 +547,7 @@ export type TimelinePoint = {
   passed: number
   profile_id: number
   dataset_name?: string
+  dataset_id?: number
 }
 
 export type TimelineData = {

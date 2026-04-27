@@ -29,6 +29,7 @@ class Agent(Base):
     environment = Column(String, nullable=True, default="experiment")
     tags = Column(JSON, nullable=True, default=list)
     extra_metadata = Column(JSON, nullable=True, default=dict)
+    agent_notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -241,8 +242,20 @@ class AgentPromptVersion(Base):
     workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1)
     system_prompt = Column(Text, nullable=False)
     version_num = Column(Integer, nullable=False, default=1)
-    status = Column(String, default="active")   # "draft" | "active" | "archived"
-    label = Column(String, nullable=True)        # nome amigável opcional
+    status = Column(String, default="active")   # "active" | "archived"
+    label = Column(String, nullable=True)
+    change_summary = Column(Text, nullable=True)  # resumo LLM das alterações vs versão anterior
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PromptVersionComparison(Base):
+    """Cache de comparações LLM entre duas versões de prompt."""
+    __tablename__ = "prompt_version_comparisons"
+
+    id = Column(Integer, primary_key=True, index=True)
+    v1_id = Column(Integer, ForeignKey("agent_prompt_versions.id"), nullable=False, index=True)
+    v2_id = Column(Integer, ForeignKey("agent_prompt_versions.id"), nullable=False, index=True)
+    summary = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

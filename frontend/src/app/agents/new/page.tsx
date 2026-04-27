@@ -7,40 +7,27 @@ import { LoadingButton } from "@/components/ui/LoadingButton"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 const PRESETS = [
-  {
-    label: "Simples",
-    body: `{"message": "{{message}}"}`,
-    output: "response",
-  },
-  {
-    label: "Com sessão",
-    body: `{"message": "{{message}}", "session_id": "{{sessionId}}"}`,
-    output: "response",
-  },
-  {
-    label: "OpenAI / Azure",
-    body: `{\n  "messages": [\n    {"role": "user", "content": "{{message}}"}\n  ]\n}`,
-    output: "choices.0.message.content",
-  },
-  {
-    label: "OpenAI + System",
-    body: `{\n  "messages": [\n    {"role": "system", "content": "Você é um assistente."},\n    {"role": "user", "content": "{{message}}"}\n  ],\n  "temperature": 0.7\n}`,
-    output: "choices.0.message.content",
-  },
-  {
-    label: "OpenAI + System Prompt",
-    body: `{\n  "messages": [\n    {"role": "system", "content": "{{system_prompt}}"},\n    {"role": "user", "content": "{{message}}"}\n  ]\n}`,
-    output: "choices.0.message.content",
-  },
-  {
-    label: "SSE texto puro",
-    body: `{"message": "{{message}}"}`,
-    output: "",
-    sse: true,
-  },
+  { label: "Simples",              body: `{"message": "{{message}}"}`,                                                                                                                    output: "response" },
+  { label: "Com sessão",           body: `{"message": "{{message}}", "session_id": "{{sessionId}}"}`,                                                                                    output: "response" },
+  { label: "OpenAI / Azure",       body: `{\n  "messages": [\n    {"role": "user", "content": "{{message}}"}\n  ]\n}`,                                                                   output: "choices.0.message.content" },
+  { label: "OpenAI + System",      body: `{\n  "messages": [\n    {"role": "system", "content": "Você é um assistente."},\n    {"role": "user", "content": "{{message}}"}\n  ],\n  "temperature": 0.7\n}`, output: "choices.0.message.content" },
+  { label: "OpenAI + System Prompt", body: `{\n  "messages": [\n    {"role": "system", "content": "{{system_prompt}}"},\n    {"role": "user", "content": "{{message}}"}\n  ]\n}`,      output: "choices.0.message.content" },
+  { label: "SSE texto puro",       body: `{"message": "{{message}}"}`,                                                                                                                    output: "", sse: true },
 ]
 
-const DEFAULT_BODY = PRESETS[0].body
+const PROVIDERS = ["custom", "azure-openai", "openai", "anthropic", "google", "mistral"]
+const PROVIDER_MODELS: Record<string, string[]> = {
+  "azure-openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-35-turbo"],
+  "openai":       ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo", "o1", "o3-mini"],
+  "anthropic":    ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-3-5-sonnet-20241022"],
+  "google":       ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+  "mistral":      ["mistral-large-latest", "mistral-small-latest"],
+  "custom":       [],
+}
+const ENVIRONMENTS = ["experiment", "development", "staging", "production"]
+const ENV_LABELS: Record<string, string> = {
+  experiment: "Experimento", development: "Desenvolvimento", staging: "Homologação", production: "Produção",
+}
 
 export default function NewAgentPage() {
   const router = useRouter()
@@ -48,7 +35,7 @@ export default function NewAgentPage() {
   const [url, setUrl] = useState("")
   const [apiKey, setApiKey] = useState("")
   const [connectionType, setConnectionType] = useState("http")
-  const [requestBody, setRequestBody] = useState(DEFAULT_BODY)
+  const [requestBody, setRequestBody] = useState(`{"message": "{{message}}"}`)
   const [outputField, setOutputField] = useState("response")
   const [systemPrompt, setSystemPrompt] = useState("")
   const [bodyError, setBodyError] = useState<string | null>(null)
@@ -68,69 +55,27 @@ export default function NewAgentPage() {
 
   const [modelProvider, setModelProvider] = useState("custom")
   const [modelName, setModelName] = useState("")
-  const [temperature, setTemperature] = useState<number | "">(0.7)
-  const [maxTokens, setMaxTokens] = useState<number | "">("")
+  const [temperature, setTemperature] = useState("")
+  const [maxTokens, setMaxTokens] = useState("")
   const [environment, setEnvironment] = useState("experiment")
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState("")
   const [extraMetadata, setExtraMetadata] = useState("{}")
   const [extraMetaError, setExtraMetaError] = useState<string | null>(null)
+  const [agentNotes, setAgentNotes] = useState("")
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   function applyPreset(p: typeof PRESETS[0]) {
-    setRequestBody(p.body)
-    setOutputField(p.output)
-    if (p.sse) setConnectionType("sse")
-    setBodyError(null)
-    setPreview(null)
+    setRequestBody(p.body); setOutputField(p.output)
+    if (p.sse) setConnectionType("sse"); setBodyError(null); setPreview(null)
   }
 
   function handleBodyChange(val: string) {
     setRequestBody(val)
-    try {
-      JSON.parse(val.replace(/\{\{[^}]+\}\}/g, 'placeholder'))
-      setBodyError(null)
-    } catch {
-      setBodyError("JSON inválido")
-    }
-  }
-
-  async function handlePing() {
-    if (!url) return
-    setPinging(true)
-    setPingResult(null)
-    try {
-      const r = await testConnection(url, apiKey)
-      setPingResult({ ok: r.ok, msg: r.ok ? `OK (HTTP ${r.status_code})` : `Falhou: ${r.error}` })
-    } catch (e: any) {
-      setPingResult({ ok: false, msg: e.message })
-    } finally {
-      setPinging(false)
-    }
-  }
-
-  async function handlePreview() {
-    if (!url || bodyError) return
-    const ciid = crypto.randomUUID()
-    setPreviewSessionId(ciid)
-    setPreviewing(true)
-    setPreview(null)
-    try {
-      const r = await previewResponse({ url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, message: previewMsg, session_id: ciid })
-      setPreview(r)
-    } catch (e: any) {
-      setPreview({ error: e.message })
-    } finally {
-      setPreviewing(false)
-    }
-  }
-
-  function addTag(tag: string) {
-    const t = tag.trim()
-    if (t && !tags.includes(t)) setTags(prev => [...prev, t])
-    setTagInput("")
+    try { JSON.parse(val.replace(/\{\{[^}]+\}\}/g, '"placeholder"')); setBodyError(null) }
+    catch { setBodyError("JSON inválido") }
   }
 
   function handleExtraMetadataChange(val: string) {
@@ -138,11 +83,40 @@ export default function NewAgentPage() {
     try { JSON.parse(val); setExtraMetaError(null) } catch { setExtraMetaError("JSON inválido") }
   }
 
+  function addTag(e: React.KeyboardEvent) {
+    if ((e.key === "Enter" || e.key === ",") && tagInput.trim()) {
+      e.preventDefault()
+      const t = tagInput.trim().replace(/,$/, "")
+      if (t && !tags.includes(t)) setTags(prev => [...prev, t])
+      setTagInput("")
+    }
+  }
+
+  async function handlePing() {
+    if (!url) return
+    setPinging(true); setPingResult(null)
+    try {
+      const r = await testConnection(url, apiKey)
+      setPingResult({ ok: r.ok, msg: r.ok ? `OK (HTTP ${r.status_code})` : `Falhou: ${r.error}` })
+    } catch (e: unknown) { setPingResult({ ok: false, msg: e instanceof Error ? e.message : "Erro" }) }
+    finally { setPinging(false) }
+  }
+
+  async function handlePreview() {
+    if (!url || bodyError) return
+    const ciid = crypto.randomUUID()
+    setPreviewSessionId(ciid); setPreviewing(true); setPreview(null)
+    try {
+      const r = await previewResponse({ url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, message: previewMsg, session_id: ciid })
+      setPreview(r)
+    } catch (e: unknown) { setPreview({ error: e instanceof Error ? e.message : "Erro" }) }
+    finally { setPreviewing(false) }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (bodyError || extraMetaError) return
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     let parsedExtra: Record<string, unknown> = {}
     try { parsedExtra = JSON.parse(extraMetadata) } catch { parsedExtra = {} }
     try {
@@ -156,16 +130,17 @@ export default function NewAgentPage() {
         token_header_name: useTokenCall ? tokenHeaderName || undefined : undefined,
         model_provider: modelProvider,
         model_name: modelName || undefined,
-        temperature: temperature !== "" ? Number(temperature) : undefined,
-        max_tokens: maxTokens !== "" ? Number(maxTokens) : undefined,
+        temperature: temperature !== "" ? parseFloat(temperature) : undefined,
+        max_tokens: maxTokens !== "" ? parseInt(maxTokens) : undefined,
         environment,
         tags,
         extra_metadata: parsedExtra,
+        agent_notes: agentNotes || undefined,
       })
       showAfterNav("Agente criado")
       window.location.href = "/agents"
-    } catch (e: any) {
-      setError(e.message)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erro")
       setLoading(false)
     }
   }
@@ -174,67 +149,133 @@ export default function NewAgentPage() {
     <div className="max-w-2xl">
       <Breadcrumb items={[{ label: "Agentes", href: "/agents" }, { label: "Novo agente" }]} />
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Novo Agente</h1>
-      <form onSubmit={handleSubmit} className="space-y-4">
 
+      <form onSubmit={handleSubmit} className="space-y-4">
         {/* Identificação */}
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">Identificação</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className={lbl}>Nome *</label>
-              <input className={inp} value={name} onChange={e => setName(e.target.value)} required />
+          <h2 className={sec}>Identificação</h2>
+          <div>
+            <label className={lbl}>Nome *</label>
+            <input className={inp} value={name} onChange={e => setName(e.target.value)} required />
+          </div>
+          <div>
+            <label className={lbl}>URL do endpoint *</label>
+            <div className="flex gap-2">
+              <input className={`${inp} flex-1`} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." required />
+              <button type="button" onClick={handlePing} disabled={pinging || !url}
+                className="px-3 border border-gray-300 rounded text-xs hover:bg-gray-50 disabled:opacity-40 shrink-0">
+                {pinging ? "..." : "Testar"}
+              </button>
             </div>
-            <div className="col-span-2">
-              <label className={lbl}>URL do endpoint *</label>
-              <div className="flex gap-2">
-                <input className={`${inp} flex-1`} value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." required />
-                <button type="button" onClick={handlePing} disabled={pinging || !url}
-                  className="px-3 border border-gray-300 rounded text-xs hover:bg-gray-50 disabled:opacity-40 shrink-0">
-                  {pinging ? "..." : "Testar"}
-                </button>
-              </div>
-              {pingResult && (
-                <p className={`text-xs mt-1 ${pingResult.ok ? "text-green-600" : "text-red-500"}`}>{pingResult.msg}</p>
+            {pingResult && <p className={`text-xs mt-1 ${pingResult.ok ? "text-green-600" : "text-red-500"}`}>{pingResult.msg}</p>}
+          </div>
+          <div>
+            <label className={lbl}>Token de autenticação <span className="font-normal text-gray-400">(Bearer — opcional)</span></label>
+            <input className={inp} type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} />
+          </div>
+        </section>
+
+        {/* Configurações do agente */}
+        <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
+          <h2 className={sec}>Configurações do agente <span className="font-normal text-gray-400">(metadados para comparações)</span></h2>
+          <p className="text-xs text-gray-400">
+            Esses dados são salvos como snapshot em cada execução, permitindo comparar configurações diferentes lado a lado nos resultados.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={lbl}>Provedor</label>
+              <select className={inp} value={modelProvider} onChange={e => { setModelProvider(e.target.value); setModelName("") }}>
+                {PROVIDERS.map(p => (
+                  <option key={p} value={p}>{p === "custom" ? "Custom" : p === "azure-openai" ? "Azure OpenAI" : p === "openai" ? "OpenAI" : p === "anthropic" ? "Anthropic" : p === "google" ? "Google" : p}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={lbl}>Modelo</label>
+              <input className={inp} value={modelName} onChange={e => setModelName(e.target.value)}
+                list={`model-suggestions-${modelProvider}`} placeholder="gpt-4o, claude-3-5-sonnet..." />
+              {PROVIDER_MODELS[modelProvider]?.length > 0 && (
+                <datalist id={`model-suggestions-${modelProvider}`}>
+                  {PROVIDER_MODELS[modelProvider].map(m => <option key={m} value={m} />)}
+                </datalist>
               )}
             </div>
-            <div className="col-span-2">
-              <label className={lbl}>Token de autenticação <span className="font-normal text-gray-400">(Bearer — opcional)</span></label>
-              <input className={inp} type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={lbl}>Temperatura <span className="text-gray-400">(0–2)</span></label>
+              <input className={inp} type="number" step="0.1" min="0" max="2"
+                value={temperature} onChange={e => setTemperature(e.target.value)} placeholder="0.7" />
             </div>
+            <div>
+              <label className={lbl}>Max Tokens</label>
+              <input className={inp} type="number" min="1"
+                value={maxTokens} onChange={e => setMaxTokens(e.target.value)} placeholder="2000" />
+            </div>
+          </div>
+          <div>
+            <label className={lbl}>Ambiente</label>
+            <select className={inp} value={environment} onChange={e => setEnvironment(e.target.value)}>
+              {ENVIRONMENTS.map(e => <option key={e} value={e}>{ENV_LABELS[e]}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={lbl}>Tags <span className="text-gray-400">(Enter ou vírgula para adicionar)</span></label>
+            <div className="flex flex-wrap gap-1 mb-1">
+              {tags.map(t => (
+                <span key={t} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded-full">
+                  {t}
+                  <button type="button" onClick={() => setTags(prev => prev.filter(x => x !== t))} className="text-gray-400 hover:text-red-500">×</button>
+                </span>
+              ))}
+            </div>
+            <input className={inp} value={tagInput} onChange={e => setTagInput(e.target.value)} onKeyDown={addTag}
+              placeholder="guardrails-on, v2, A/B-test-A..." />
+          </div>
+          <div>
+            <label className={lbl}>Configurações extras <span className="text-gray-400">(JSON livre — top_p, seed, etc.)</span></label>
+            <textarea className={`${inp} h-16 font-mono text-xs resize-y ${extraMetaError ? "border-red-400" : ""}`}
+              value={extraMetadata} onChange={e => handleExtraMetadataChange(e.target.value)} spellCheck={false} />
+            {extraMetaError && <p className="text-xs text-red-500 mt-1">{extraMetaError}</p>}
+          </div>
+          <div>
+            <label className={lbl}>Notas sobre KBs e ferramentas <span className="text-gray-400">(opcional)</span></label>
+            <p className="text-xs text-gray-400 mb-1">
+              Descreva o estado atual das bases de conhecimento e ferramentas conectadas ao agente. Registrado no snapshot de cada execução.
+            </p>
+            <textarea
+              className={`${inp} h-20 text-xs resize-y`}
+              value={agentNotes}
+              onChange={e => setAgentNotes(e.target.value)}
+              placeholder="Ex: KB v3.2 (atualizada em 20/04), tool de consulta de saldo ativa, tool de PIX desativada para testes..."
+              spellCheck={false}
+            />
           </div>
         </section>
 
         {/* System Prompt */}
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">System Prompt <span className="font-normal text-gray-400">(opcional)</span></h2>
-          </div>
+          <h2 className={sec}>System Prompt <span className="font-normal text-gray-400">(opcional)</span></h2>
           <p className="text-xs text-gray-400">
-            Instruções do agente. Usado pelo assistente para gerar cenários de teste mais relevantes.
+            Instruções do agente. Usado para avaliação de alinhamento e como contexto do judge LLM.
           </p>
           <textarea
             className={`${inp} h-28 text-xs resize-y font-mono`}
             value={systemPrompt}
             onChange={e => setSystemPrompt(e.target.value)}
-            placeholder="Ex: Você é um assistente bancário. Responda apenas perguntas sobre conta corrente, cartão e empréstimos..."
+            placeholder="Ex: Você é um assistente bancário. Responda apenas sobre conta, cartão e empréstimos..."
             spellCheck={false}
           />
         </section>
 
         {/* Protocolo */}
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">Protocolo</h2>
+          <h2 className={sec}>Protocolo</h2>
           <div className="flex gap-2">
-            {[
-              { v: "http", label: "HTTP", desc: "Request / Response" },
-              { v: "sse",  label: "SSE",  desc: "Server-Sent Events" },
-            ].map(t => (
+            {[{ v: "http", label: "HTTP", desc: "Request / Response" }, { v: "sse", label: "SSE", desc: "Server-Sent Events" }].map(t => (
               <button key={t.v} type="button" onClick={() => { setConnectionType(t.v); setPreview(null) }}
-                className={`flex-1 py-2 rounded border text-sm font-medium transition-colors ${
-                  connectionType === t.v ? "bg-blue-600 text-white border-blue-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"
-                }`}>
-                {t.label}
-                <span className="block text-xs font-normal opacity-75">{t.desc}</span>
+                className={`flex-1 py-2 rounded border text-sm font-medium transition-colors ${connectionType === t.v ? "bg-blue-600 text-white border-blue-600" : "border-gray-300 text-gray-600 hover:bg-gray-50"}`}>
+                {t.label}<span className="block text-xs font-normal opacity-75">{t.desc}</span>
               </button>
             ))}
           </div>
@@ -243,95 +284,52 @@ export default function NewAgentPage() {
         {/* Autenticação em dois passos */}
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">Autenticação em dois passos <span className="font-normal text-gray-400">(opcional)</span></h2>
+            <h2 className={sec}>Autenticação em dois passos <span className="font-normal text-gray-400">(opcional)</span></h2>
             <button type="button" onClick={() => setUseTokenCall(v => !v)}
               className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${useTokenCall ? "bg-teal-500" : "bg-gray-300"}`}>
               <span className={`inline-flex h-5 w-5 items-center justify-center transform rounded-full bg-white shadow transition-transform ${useTokenCall ? "translate-x-[22px]" : "translate-x-0.5"}`}>
-                {useTokenCall && (
-                  <svg className="h-3 w-3 text-teal-500" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
+                {useTokenCall && <svg className="h-3 w-3 text-teal-500" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
               </span>
             </button>
           </div>
           {useTokenCall && (
             <div className="space-y-3 pt-1">
-              <p className="text-xs text-gray-400">
-                Antes de chamar o agente, faz uma requisição para obter um token dinâmico.
-                Use <code className="bg-gray-100 px-1 rounded">{"{{token}}"}</code> no body principal ou deixe a chave de API vazia para usar o token como Bearer automaticamente.
-              </p>
-              <div>
-                <label className={lbl}>URL do token *</label>
-                <input className={inp} value={tokenUrl} onChange={e => setTokenUrl(e.target.value)}
-                  placeholder="https://auth.exemplo.com/token" />
-              </div>
-              <div>
-                <label className={lbl}>Body da requisição de token</label>
-                <textarea className={`${inp} h-20 font-mono text-xs resize-y`}
-                  value={tokenRequestBody} onChange={e => setTokenRequestBody(e.target.value)}
-                  spellCheck={false} placeholder={`{"client_id": "...", "client_secret": "..."}`} />
-              </div>
+              <p className="text-xs text-gray-400">Faz uma requisição de token antes de chamar o agente. Use <code className="bg-gray-100 px-1 rounded">{"{{token}}"}</code> no body principal.</p>
+              <div><label className={lbl}>URL do token *</label><input className={inp} value={tokenUrl} onChange={e => setTokenUrl(e.target.value)} placeholder="https://auth.exemplo.com/token" /></div>
+              <div><label className={lbl}>Body da requisição de token</label><textarea className={`${inp} h-20 font-mono text-xs resize-y`} value={tokenRequestBody} onChange={e => setTokenRequestBody(e.target.value)} spellCheck={false} /></div>
               <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={lbl}>Campo do token na resposta</label>
-                  <input className={inp} value={tokenOutputField} onChange={e => setTokenOutputField(e.target.value)}
-                    placeholder="token" />
-                </div>
-                <div>
-                  <label className={lbl}>Header destino</label>
-                  <input className={inp} value={tokenHeaderName} onChange={e => setTokenHeaderName(e.target.value)}
-                    placeholder="Authorization" />
-                </div>
+                <div><label className={lbl}>Campo do token</label><input className={inp} value={tokenOutputField} onChange={e => setTokenOutputField(e.target.value)} placeholder="token" /></div>
+                <div><label className={lbl}>Header destino</label><input className={inp} value={tokenHeaderName} onChange={e => setTokenHeaderName(e.target.value)} placeholder="Authorization" /></div>
               </div>
             </div>
           )}
         </section>
 
-        {/* Request / Response */}
+        {/* Request & Response */}
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">Request &amp; Response</h2>
-
+          <h2 className={sec}>Request &amp; Response</h2>
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className={lbl}>Body do request</label>
-              <select
-                className="text-xs border border-gray-200 rounded px-2 py-0.5 text-gray-500 bg-white hover:border-gray-300 focus:outline-none"
-                value=""
-                onChange={e => { const p = PRESETS.find(p => p.label === e.target.value); if (p) applyPreset(p) }}
-              >
+              <select className="text-xs border border-gray-200 rounded px-2 py-0.5 text-gray-500 bg-white hover:border-gray-300 focus:outline-none" value=""
+                onChange={e => { const p = PRESETS.find(p => p.label === e.target.value); if (p) applyPreset(p) }}>
                 <option value="">Preset...</option>
                 {PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
               </select>
             </div>
-            <p className="text-xs text-gray-400 mb-1">
-              Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code> para a mensagem,{" "}
-              <code className="bg-gray-100 px-1 rounded">{"{{sessionId}}"}</code> para sessão e{" "}
-              <code className="bg-gray-100 px-1 rounded">{"{{system_prompt}}"}</code> para injetar o system prompt acima.
-            </p>
-            <textarea
-              className={`${inp} h-32 font-mono text-xs resize-y ${bodyError ? "border-red-400" : ""}`}
-              value={requestBody}
-              onChange={e => handleBodyChange(e.target.value)}
-              spellCheck={false}
-            />
+            <p className="text-xs text-gray-400 mb-1">Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code>, <code className="bg-gray-100 px-1 rounded">{"{{sessionId}}"}</code> e <code className="bg-gray-100 px-1 rounded">{"{{system_prompt}}"}</code>.</p>
+            <textarea className={`${inp} h-32 font-mono text-xs resize-y ${bodyError ? "border-red-400" : ""}`} value={requestBody} onChange={e => handleBodyChange(e.target.value)} spellCheck={false} />
             {bodyError && <p className="text-xs text-red-500 mt-1">{bodyError}</p>}
           </div>
-
           <div>
             <label className={lbl}>Campo de saída <span className="font-normal text-gray-400">(dot-notation)</span></label>
-            <p className="text-xs text-gray-400 mb-1">
-              Caminho no JSON da resposta. Ex: <code className="bg-gray-100 px-1 rounded">choices.0.message.content</code>
-              {connectionType === "sse" && <> — deixe vazio para SSE com texto puro</>}
-            </p>
-            <input className={inp} value={outputField} onChange={e => setOutputField(e.target.value)}
-              placeholder={connectionType === "sse" ? "(vazio = texto puro)" : "response"} />
+            <input className={inp} value={outputField} onChange={e => setOutputField(e.target.value)} placeholder={connectionType === "sse" ? "(vazio = texto puro)" : "response"} />
           </div>
         </section>
 
-        {/* Preview */}
+        {/* Inspecionar resposta */}
         <section className="bg-white border border-dashed border-gray-300 rounded-lg p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-600">Inspecionar resposta</h2>
+          <h2 className={`${sec} text-gray-500`}>Inspecionar resposta</h2>
           <div className="flex gap-2">
             <input className={`${inp} flex-1`} value={previewMsg} onChange={e => setPreviewMsg(e.target.value)} placeholder="Mensagem de teste..." />
             <button type="button" onClick={handlePreview} disabled={previewing || !url || !!bodyError}
@@ -339,132 +337,34 @@ export default function NewAgentPage() {
               {previewing ? "Aguardando..." : "Enviar e ver resposta"}
             </button>
           </div>
-          {previewSessionId && (
-            <p className="text-xs text-gray-400">
-              <span className="font-medium text-gray-500">{"{{sessionId}}"}</span> usado:{" "}
-              <code className="font-mono text-gray-500">{previewSessionId}</code>
-            </p>
-          )}
+          {previewSessionId && <p className="text-xs text-gray-400"><span className="font-medium text-gray-500">{"{{sessionId}}"}</span> usado: <code className="font-mono text-gray-500">{previewSessionId}</code></p>}
           {preview != null && (() => {
-            const p = preview as any
+            const p = preview as Record<string, unknown>
             return (
               <div className="space-y-2">
-                {/* Resposta capturada */}
-                {p.extracted != null && (
-                  <div className="bg-green-50 border border-green-200 rounded p-3">
-                    <p className="text-xs font-semibold text-green-700 mb-1">Resposta capturada</p>
-                    <p className="text-sm text-green-900 whitespace-pre-wrap">{p.extracted}</p>
-                  </div>
-                )}
-                {p.extract_error && (
-                  <div className="bg-red-50 border border-red-200 rounded p-3">
-                    <p className="text-xs font-semibold text-red-700 mb-1">Erro ao extrair campo de saída</p>
-                    <p className="text-xs text-red-600">{p.extract_error}</p>
-                  </div>
-                )}
-                {p.error && (
-                  <div className="bg-red-50 border border-red-200 rounded p-3">
-                    <p className="text-xs text-red-600">{p.error}</p>
-                  </div>
-                )}
-                {/* JSON bruto */}
-                <details>
-                  <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Ver JSON bruto</summary>
-                  <pre className="bg-gray-950 text-green-400 text-xs rounded p-3 overflow-auto max-h-56 whitespace-pre-wrap mt-1">
-                    {JSON.stringify(p.raw_response ?? p.sample_events ?? p, null, 2)}
-                  </pre>
-                </details>
+                {p.extracted != null && <div className="bg-green-50 border border-green-200 rounded p-3"><p className="text-xs font-semibold text-green-700 mb-1">Resposta capturada</p><p className="text-sm text-green-900 whitespace-pre-wrap">{String(p.extracted)}</p></div>}
+                {!!p.extract_error && <div className="bg-red-50 border border-red-200 rounded p-3"><p className="text-xs text-red-600">{String(p.extract_error)}</p></div>}
+                {!!p.error && <div className="bg-red-50 border border-red-200 rounded p-3"><p className="text-xs text-red-600">{String(p.error)}</p></div>}
+                <details><summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">Ver JSON bruto</summary><pre className="bg-gray-950 text-green-400 text-xs rounded p-3 overflow-auto max-h-56 whitespace-pre-wrap mt-1">{JSON.stringify(p.raw_response ?? p.sample_events ?? p, null, 2)}</pre></details>
               </div>
             )
           })()}
         </section>
 
-        {/* Configuração do Modelo */}
-        <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-700">Configuração do Modelo <span className="font-normal text-gray-400">(opcional)</span></h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className={lbl}>Provedor</label>
-              <select className={inp} value={modelProvider} onChange={e => setModelProvider(e.target.value)}>
-                <option value="custom">Custom</option>
-                <option value="azure-openai">Azure OpenAI</option>
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="google">Google</option>
-              </select>
-            </div>
-            <div>
-              <label className={lbl}>Modelo</label>
-              <input className={inp} list="model-suggestions" value={modelName} onChange={e => setModelName(e.target.value)} placeholder="gpt-4o, claude-3-5-sonnet..." />
-              <datalist id="model-suggestions">
-                <option value="gpt-4o" /><option value="gpt-4o-mini" /><option value="gpt-4-turbo" />
-                <option value="claude-3-5-sonnet-20241022" /><option value="claude-3-opus-20240229" />
-                <option value="gemini-1.5-pro" /><option value="gemini-1.5-flash" />
-              </datalist>
-            </div>
-            <div>
-              <label className={lbl}>Temperatura <span className="font-normal text-gray-400">(0–2)</span></label>
-              <div className="flex items-center gap-2">
-                <input type="range" min={0} max={2} step={0.1} value={temperature === "" ? 0.7 : temperature}
-                  onChange={e => setTemperature(Number(e.target.value))} className="flex-1 accent-red-600" />
-                <input type="number" min={0} max={2} step={0.1} value={temperature}
-                  onChange={e => setTemperature(e.target.value === "" ? "" : Number(e.target.value))}
-                  className="w-16 border border-gray-300 rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-red-500" />
-              </div>
-            </div>
-            <div>
-              <label className={lbl}>Max Tokens</label>
-              <input type="number" className={inp} min={1} value={maxTokens}
-                onChange={e => setMaxTokens(e.target.value === "" ? "" : Number(e.target.value))} placeholder="ex: 2000" />
-            </div>
-            <div>
-              <label className={lbl}>Ambiente</label>
-              <select className={inp} value={environment} onChange={e => setEnvironment(e.target.value)}>
-                <option value="experiment">Experimento</option>
-                <option value="development">Desenvolvimento</option>
-                <option value="staging">Staging</option>
-                <option value="production">Produção</option>
-              </select>
-            </div>
-            <div>
-              <label className={lbl}>Tags</label>
-              <div className="flex flex-wrap gap-1 mb-1">
-                {tags.map(t => (
-                  <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 rounded text-xs">
-                    {t}
-                    <button type="button" onClick={() => setTags(prev => prev.filter(x => x !== t))} className="text-purple-400 hover:text-purple-600">×</button>
-                  </span>
-                ))}
-              </div>
-              <input className={inp} value={tagInput} onChange={e => setTagInput(e.target.value)}
-                placeholder="Adicionar tag + Enter"
-                onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addTag(tagInput) } }} />
-            </div>
-          </div>
-          <div>
-            <label className={lbl}>Configurações extras <span className="font-normal text-gray-400">(JSON livre)</span></label>
-            <textarea className={`${inp} h-20 font-mono text-xs resize-y ${extraMetaError ? "border-red-400" : ""}`}
-              value={extraMetadata} onChange={e => handleExtraMetadataChange(e.target.value)}
-              placeholder='{"top_p": 0.9, "seed": 42}' spellCheck={false} />
-            {extraMetaError && <p className="text-xs text-red-500 mt-1">{extraMetaError}</p>}
-          </div>
-        </section>
-
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <LoadingButton
-          type="submit"
-          isLoading={loading}
-          loadingText="Salvando agente…"
-          disabled={!!bodyError || !!extraMetaError}
-          className="w-full rounded-lg"
-        >
-          Salvar agente
-        </LoadingButton>
+        <div className="flex gap-3">
+          <a href="/agents" className="flex-1 text-center flame-button-secondary">Cancelar</a>
+          <LoadingButton type="submit" isLoading={loading} loadingText="Salvando agente…"
+            disabled={!!bodyError || !!extraMetaError} className="flex-1">
+            Salvar agente
+          </LoadingButton>
+        </div>
       </form>
     </div>
   )
 }
 
 const lbl = "block text-xs font-medium text-gray-600 mb-1"
+const sec = "text-sm font-semibold text-gray-700"
 const inp = "w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"

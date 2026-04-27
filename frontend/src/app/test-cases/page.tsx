@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
-import { FlaskConical, Plus, Search } from "lucide-react"
+import { FlaskConical, Loader2, Plus, Search } from "lucide-react"
 import { motion } from "framer-motion"
 import { getTestCases, type TestCase } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
@@ -33,6 +33,10 @@ export default function TestCasesPage() {
   const [cases, setCases] = useState<TestCase[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+
+  function markDeleting(id: number) { setDeletingIds(prev => new Set([...prev, id])) }
+  function unmarkDeleting(id: number) { setDeletingIds(prev => { const s = new Set(prev); s.delete(id); return s }) }
 
   useEffect(() => {
     getTestCases()
@@ -113,10 +117,10 @@ export default function TestCasesPage() {
               {filtered.map((tc, i) => (
                 <motion.tr
                   key={tc.id}
-                  className="hover:bg-gray-50"
+                  className={deletingIds.has(tc.id) ? "pointer-events-none bg-gray-50" : "hover:bg-gray-50"}
                   initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03, duration: 0.15 }}
+                  animate={{ opacity: deletingIds.has(tc.id) ? 0.4 : 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
                 >
                   <td className="px-4 py-3 font-medium text-gray-900 max-w-[200px] truncate">
                     {tc.title}
@@ -135,10 +139,18 @@ export default function TestCasesPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
-                      <Link href={`/test-cases/${tc.id}/edit`} className="flame-link-action">
-                        Editar
-                      </Link>
-                      <DeleteButton id={tc.id} path="/test-cases" onDeleted={() => setCases(prev => prev.filter(c => c.id !== tc.id))} />
+                      {deletingIds.has(tc.id) ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-300" />
+                      ) : (
+                        <>
+                          <Link href={`/test-cases/${tc.id}/edit`} className="flame-link-action">Editar</Link>
+                          <DeleteButton id={tc.id} path="/test-cases"
+                            onDeleteStart={() => markDeleting(tc.id)}
+                            onDeleteUndo={() => unmarkDeleting(tc.id)}
+                            onDeleted={() => { setCases(prev => prev.filter(c => c.id !== tc.id)); unmarkDeleting(tc.id) }}
+                          />
+                        </>
+                      )}
                     </div>
                   </td>
                 </motion.tr>

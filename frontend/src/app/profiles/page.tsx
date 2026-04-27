@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Plus, SlidersHorizontal } from "lucide-react"
+import { Loader2, Plus, SlidersHorizontal } from "lucide-react"
 import { motion } from "framer-motion"
 import { getProfiles, type EvaluationProfile } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
@@ -38,6 +38,10 @@ function MetricChips({ metrics }: { metrics: string[] }) {
 export default function ProfilesPage() {
   const [profiles, setProfiles] = useState<EvaluationProfile[]>([])
   const [loading, setLoading] = useState(true)
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+
+  function markDeleting(id: number) { setDeletingIds(prev => new Set([...prev, id])) }
+  function unmarkDeleting(id: number) { setDeletingIds(prev => { const s = new Set(prev); s.delete(id); return s }) }
 
   useEffect(() => {
     getProfiles()
@@ -93,10 +97,10 @@ export default function ProfilesPage() {
                 return (
                   <motion.tr
                     key={p.id}
-                    className="hover:bg-gray-50"
+                    className={deletingIds.has(p.id) ? "pointer-events-none bg-gray-50" : "hover:bg-gray-50"}
                     initial={{ opacity: 0, y: 4 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.04, duration: 0.15 }}
+                    animate={{ opacity: deletingIds.has(p.id) ? 0.4 : 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
                   >
                     <td className="px-4 py-3 font-medium text-gray-900 max-w-[180px] truncate">
                       {p.name}
@@ -118,10 +122,18 @@ export default function ProfilesPage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-3">
-                        <Link href={`/profiles/${p.id}/edit`} className="flame-link-action">
-                          Editar
-                        </Link>
-                        <DeleteButton id={p.id} path="/profiles" onDeleted={() => setProfiles(prev => prev.filter(x => x.id !== p.id))} />
+                        {deletingIds.has(p.id) ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-300" />
+                        ) : (
+                          <>
+                            <Link href={`/profiles/${p.id}/edit`} className="flame-link-action">Editar</Link>
+                            <DeleteButton id={p.id} path="/profiles"
+                              onDeleteStart={() => markDeleting(p.id)}
+                              onDeleteUndo={() => unmarkDeleting(p.id)}
+                              onDeleted={() => { setProfiles(prev => prev.filter(x => x.id !== p.id)); unmarkDeleting(p.id) }}
+                            />
+                          </>
+                        )}
                       </div>
                     </td>
                   </motion.tr>

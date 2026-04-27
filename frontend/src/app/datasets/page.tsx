@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Database, Upload } from "lucide-react"
+import { Database, Loader2, Upload } from "lucide-react"
 import { motion } from "framer-motion"
 import { getDatasets, type Dataset } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
@@ -12,6 +12,10 @@ import { Breadcrumb } from "@/components/ui/Breadcrumb"
 export default function DatasetsPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([])
   const [loading, setLoading] = useState(true)
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+
+  function markDeleting(id: number) { setDeletingIds(prev => new Set([...prev, id])) }
+  function unmarkDeleting(id: number) { setDeletingIds(prev => { const s = new Set(prev); s.delete(id); return s }) }
 
   useEffect(() => {
     getDatasets()
@@ -53,10 +57,10 @@ export default function DatasetsPage() {
           {datasets.map((ds, i) => (
             <motion.div
               key={ds.id}
-              className="flame-panel p-4"
+              className={`flame-panel p-4 ${deletingIds.has(ds.id) ? "pointer-events-none" : ""}`}
               initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.04, duration: 0.15 }}
+              animate={{ opacity: deletingIds.has(ds.id) ? 0.4 : 1, y: 0 }}
+              transition={{ duration: 0.2 }}
             >
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
@@ -72,13 +76,19 @@ export default function DatasetsPage() {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  <Link href={`/datasets/${ds.id}/evaluate`} className="flame-button h-8 min-h-8 px-3 text-xs">
-                    Avaliar
-                  </Link>
-                  <Link href={`/datasets/${ds.id}`} className="flame-link-action">
-                    Ver registros
-                  </Link>
-                  <DeleteButton id={ds.id} path="/datasets" onDeleted={() => setDatasets(prev => prev.filter(x => x.id !== ds.id))} />
+                  {deletingIds.has(ds.id) ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-300" />
+                  ) : (
+                    <>
+                      <Link href={`/datasets/${ds.id}/evaluate`} className="flame-button h-8 min-h-8 px-3 text-xs">Avaliar</Link>
+                      <Link href={`/datasets/${ds.id}`} className="flame-link-action">Ver registros</Link>
+                      <DeleteButton id={ds.id} path="/datasets"
+                        onDeleteStart={() => markDeleting(ds.id)}
+                        onDeleteUndo={() => unmarkDeleting(ds.id)}
+                        onDeleted={() => { setDatasets(prev => prev.filter(x => x.id !== ds.id)); unmarkDeleting(ds.id) }}
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             </motion.div>

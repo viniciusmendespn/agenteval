@@ -1,22 +1,46 @@
 "use client"
 import { useEffect, useState, Suspense } from "react"
+import { createPortal } from "react-dom"
 import { useSearchParams } from "next/navigation"
 import { getRuns, compareRuns, type TestRun, type RunComparison, type AgentMetadataSnapshot } from "@/lib/api"
 import { TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { cn } from "@/lib/cn"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
+import { getMetricInfo } from "@/lib/metrics"
 
-const METRIC_LABELS: Record<string, string> = {
-  relevancy: "Relevância",
-  hallucination: "Alucinação",
-  toxicity: "Toxicidade",
-  bias: "Viés",
-  faithfulness: "Fidelidade",
-  latency: "Latência",
-}
+function MetricCell({ metricKey, criteria }: { metricKey: string; criteria?: string[] }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
 
-function metricLabel(k: string) {
-  return METRIC_LABELS[k] ?? k.replace("criterion_", "Critério ")
+  const idx = metricKey.startsWith("criterion_") ? Number(metricKey.replace("criterion_", "")) : -1
+  const criterionText = idx >= 0 ? criteria?.[idx] : undefined
+  const info = getMetricInfo(metricKey)
+  const tooltip = criterionText || info.description || null
+
+  return (
+    <span
+      className="inline-flex flex-col cursor-default"
+      onMouseMove={(e) => tooltip && setPos({ x: e.clientX, y: e.clientY })}
+      onMouseLeave={() => setPos(null)}
+    >
+      {criterionText ? (
+        <>
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">Critério {idx + 1}</span>
+          <span className="text-sm font-medium text-gray-800 leading-snug max-w-[260px]">{criterionText}</span>
+        </>
+      ) : (
+        <span className="text-sm font-medium text-gray-700">{info.label}</span>
+      )}
+      {pos && tooltip && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed z-[9999] w-72 rounded-lg bg-gray-900 px-3 py-2 text-xs text-gray-100 shadow-lg pointer-events-none"
+          style={{ left: pos.x + 14, top: pos.y - 8 }}
+        >
+          {tooltip}
+        </div>,
+        document.body
+      )}
+    </span>
+  )
 }
 
 function ScorePill({ score }: { score?: number | null }) {
@@ -236,7 +260,9 @@ function CompareContent() {
                 <tbody className="divide-y divide-gray-50">
                   {comparison.metric_comparison.map(m => (
                     <tr key={m.metric} className="hover:bg-gray-50/50">
-                      <td className="px-5 py-3 font-medium text-gray-700">{metricLabel(m.metric)}</td>
+                      <td className="px-5 py-3">
+                        <MetricCell metricKey={m.metric} criteria={comparison.run_a.criteria ?? comparison.run_b.criteria} />
+                      </td>
                       <td className="px-5 py-3"><ScorePill score={m.score_a} /></td>
                       <td className="px-5 py-3"><ScorePill score={m.score_b} /></td>
                       <td className="px-5 py-3"><DeltaBadge delta={m.delta} /></td>

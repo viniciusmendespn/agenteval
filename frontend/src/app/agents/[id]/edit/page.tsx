@@ -1,10 +1,10 @@
 "use client"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useParams } from "next/navigation"
+import { diffChars } from "diff"
 import {
   getAgent, updateAgent, testConnection, previewResponse,
-  getAgentPromptVersions, rollbackAgentPrompt, activatePromptVersion,
-  updateDraftVersion, deletePromptVersion,
+  getAgentPromptVersions, restorePromptVersion,
   type AgentPromptVersion,
 } from "@/lib/api"
 import { showAfterNav } from "@/components/PendingToast"
@@ -31,7 +31,7 @@ const PROVIDER_MODELS: Record<string, string[]> = {
 }
 const ENVIRONMENTS = ["experiment", "development", "staging", "production"]
 const ENV_LABELS: Record<string, string> = {
-  experiment: "Experimento", development: "Desenvolvimento", staging: "Staging", production: "Produção",
+  experiment: "Experimento", development: "Desenvolvimento", staging: "Homologação", production: "Produção",
 }
 
 export default function EditAgentPage() {
@@ -56,6 +56,7 @@ export default function EditAgentPage() {
   const [tagInput, setTagInput] = useState("")
   const [extraMetadata, setExtraMetadata] = useState("{}")
   const [extraError, setExtraError] = useState<string | null>(null)
+  const [agentNotes, setAgentNotes] = useState("")
 
   const [pingResult, setPingResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [pinging, setPinging] = useState(false)
@@ -69,11 +70,7 @@ export default function EditAgentPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [versions, setVersions] = useState<AgentPromptVersion[]>([])
-  const [versionTab, setVersionTab] = useState<"active" | "draft" | "archived">("active")
-  const [activatingId, setActivatingId] = useState<number | null>(null)
-  const [creatingDraft, setCreatingDraft] = useState<number | null>(null)
-  const [deletingVerId, setDeletingVerId] = useState<number | null>(null)
-  const [editingLabel, setEditingLabel] = useState<{ id: number; value: string } | null>(null)
+  const [restoringId, setRestoringId] = useState<number | null>(null)
 
   const [useTokenCall, setUseTokenCall] = useState(false)
   const [tokenUrl, setTokenUrl] = useState("")
@@ -82,6 +79,25 @@ export default function EditAgentPage() {
   const [tokenHeaderName, setTokenHeaderName] = useState("Authorization")
 
   const loadVersions = () => getAgentPromptVersions(Number(id)).then(setVersions).catch(() => {})
+
+  const versionDiffs = useMemo(() => {
+    const map = new Map<number, number>()
+    for (let i = 0; i < versions.length - 1; i++) {
+      const a = versions[i + 1].system_prompt
+      const b = versions[i].system_prompt
+      const changes = diffChars(a, b)
+      const changed = changes.reduce((sum, p) => sum + (p.added || p.removed ? p.value.length : 0), 0)
+      const total = Math.max(a.length, b.length)
+      map.set(versions[i].id, total === 0 ? 0 : Math.round((changed / total) * 100))
+    }
+    return map
+  }, [versions])
+
+  function diffBadgeClass(pct: number) {
+    if (pct <= 20) return "bg-green-50 text-green-700 border-green-200"
+    if (pct <= 60) return "bg-yellow-50 text-yellow-700 border-yellow-200"
+    return "bg-red-50 text-red-700 border-red-200"
+  }
 
   useEffect(() => {
     getAgent(Number(id))
@@ -100,6 +116,7 @@ export default function EditAgentPage() {
         setEnvironment(a.environment || "experiment")
         setTags(Array.isArray(a.tags) ? a.tags : [])
         setExtraMetadata(Object.keys(a.extra_metadata || {}).length ? JSON.stringify(a.extra_metadata, null, 2) : "{}")
+        setAgentNotes(a.agent_notes ?? "")
         if (a.token_url) {
           setUseTokenCall(true)
           setTokenUrl(a.token_url)
@@ -159,42 +176,14 @@ export default function EditAgentPage() {
     finally { setPreviewing(false) }
   }
 
-  async function handleCreateDraft(verId: number) {
-    setCreatingDraft(verId)
+  async function handleRestore(verId: number) {
+    setRestoringId(verId)
     try {
-      await rollbackAgentPrompt(Number(id), verId)
-      await loadVersions()
-      setVersionTab("draft")
-    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Erro") }
-    finally { setCreatingDraft(null) }
-  }
-
-  async function handleActivate(verId: number) {
-    setActivatingId(verId)
-    try {
-      const updated = await activatePromptVersion(Number(id), verId)
+      const updated = await restorePromptVersion(Number(id), verId)
       setSystemPrompt(updated.system_prompt ?? "")
       await loadVersions()
-      setVersionTab("active")
     } catch (e: unknown) { setError(e instanceof Error ? e.message : "Erro") }
-    finally { setActivatingId(null) }
-  }
-
-  async function handleDeleteDraft(verId: number) {
-    setDeletingVerId(verId)
-    try {
-      await deletePromptVersion(Number(id), verId)
-      await loadVersions()
-    } catch (e: unknown) { setError(e instanceof Error ? e.message : "Erro") }
-    finally { setDeletingVerId(null) }
-  }
-
-  async function handleSaveLabel(verId: number, label: string) {
-    try {
-      await updateDraftVersion(Number(id), verId, { label })
-      await loadVersions()
-      setEditingLabel(null)
-    } catch { /* ignore */ }
+    finally { setRestoringId(null) }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -219,6 +208,7 @@ export default function EditAgentPage() {
         environment,
         tags,
         extra_metadata: parsedExtra,
+        agent_notes: agentNotes || undefined,
       })
       showAfterNav("Agente atualizado")
       window.location.href = "/agents"
@@ -226,10 +216,6 @@ export default function EditAgentPage() {
   }
 
   if (fetching) return <div className="text-gray-400 text-sm">Carregando...</div>
-
-  const activeVersions = versions.filter(v => v.status === "active")
-  const draftVersions = versions.filter(v => v.status === "draft")
-  const archivedVersions = versions.filter(v => v.status === "archived")
 
   return (
     <div className="max-w-2xl">
@@ -261,9 +247,9 @@ export default function EditAgentPage() {
           </div>
         </section>
 
-        {/* Configuração do Modelo */}
+        {/* Configurações do agente */}
         <section className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
-          <h2 className={sec}>Configuração do Modelo <span className="font-normal text-gray-400">(metadados para comparações)</span></h2>
+          <h2 className={sec}>Configurações do agente <span className="font-normal text-gray-400">(metadados para comparações)</span></h2>
           <p className="text-xs text-gray-400">
             Esses dados são salvos como snapshot em cada execução, permitindo comparar configurações diferentes lado a lado nos resultados.
           </p>
@@ -331,6 +317,19 @@ export default function EditAgentPage() {
               value={extraMetadata} onChange={e => handleExtraChange(e.target.value)} spellCheck={false} />
             {extraError && <p className="text-xs text-red-500 mt-1">{extraError}</p>}
           </div>
+          <div>
+            <label className={lbl}>Notas sobre KBs e ferramentas <span className="text-gray-400">(opcional)</span></label>
+            <p className="text-xs text-gray-400 mb-1">
+              Descreva o estado atual das bases de conhecimento e ferramentas conectadas ao agente. Registrado no snapshot de cada execução.
+            </p>
+            <textarea
+              className={`${inp} h-20 text-xs resize-y`}
+              value={agentNotes}
+              onChange={e => setAgentNotes(e.target.value)}
+              placeholder="Ex: KB v3.2 (atualizada em 20/04), tool de consulta de saldo ativa, tool de PIX desativada para testes..."
+              spellCheck={false}
+            />
+          </div>
         </section>
 
         {/* System Prompt */}
@@ -348,81 +347,57 @@ export default function EditAgentPage() {
           />
           {versions.length > 0 && (
             <div className="border-t border-gray-100 pt-3">
-              <p className="text-xs font-semibold text-gray-600 mb-2">Histórico de versões</p>
-              {/* Abas */}
-              <div className="flex gap-1 mb-3">
-                {(["active", "draft", "archived"] as const).map(tab => {
-                  const count = tab === "active" ? activeVersions.length : tab === "draft" ? draftVersions.length : archivedVersions.length
-                  return (
-                    <button key={tab} type="button" onClick={() => setVersionTab(tab)}
-                      className={`px-3 py-1 text-xs rounded-full font-medium transition-colors ${versionTab === tab
-                        ? tab === "active" ? "bg-green-100 text-green-700" : tab === "draft" ? "bg-yellow-100 text-yellow-700" : "bg-gray-200 text-gray-600"
-                        : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                      }`}>
-                      {tab === "active" ? "Em uso" : tab === "draft" ? "Rascunhos" : "Arquivados"} ({count})
-                    </button>
-                  )
-                })}
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold text-gray-600">Histórico de versões</p>
+                {versions.length >= 2 && (
+                  <a
+                    href={`/agents/${id}/prompt-versions/compare?v1=${versions[1]?.id}&v2=${versions[0]?.id}`}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Comparar versões
+                  </a>
+                )}
               </div>
-              <div className="space-y-2 max-h-64 overflow-y-auto">
-                {(versionTab === "active" ? activeVersions : versionTab === "draft" ? draftVersions : archivedVersions).map(v => (
-                  <div key={v.id} className={`border rounded p-3 text-xs ${v.status === "active" ? "border-green-200 bg-green-50" : v.status === "draft" ? "border-yellow-200 bg-yellow-50" : "border-gray-200 bg-gray-50"}`}>
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {versions.map(v => (
+                  <div key={v.id} className={`border rounded p-3 text-xs ${v.status === "active" ? "border-green-200 bg-green-50" : "border-gray-200 bg-gray-50"}`}>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold text-gray-700">v{v.version_num}</span>
                         {v.label && <span className="text-gray-500 italic">{v.label}</span>}
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${v.status === "active" ? "bg-green-200 text-green-800" : v.status === "draft" ? "bg-yellow-200 text-yellow-800" : "bg-gray-200 text-gray-600"}`}>
-                          {v.status === "active" ? "Em uso" : v.status === "draft" ? "Rascunho" : "Arquivado"}
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${v.status === "active" ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-600"}`}>
+                          {v.status === "active" ? "Em uso" : "Histórico"}
                         </span>
+                        {versionDiffs.has(v.id) && (
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium border ${diffBadgeClass(versionDiffs.get(v.id)!)}`}>
+                            {versionDiffs.get(v.id)}% alterado
+                          </span>
+                        )}
                       </div>
-                      <span className="text-gray-400">
+                      <span className="text-gray-400 shrink-0">
                         {new Date(v.created_at).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                       </span>
                     </div>
+                    {v.change_summary && (
+                      <p className="text-gray-500 italic mb-1.5">{v.change_summary}</p>
+                    )}
                     <p className="text-gray-600 font-mono line-clamp-2 mb-2">{v.system_prompt.slice(0, 120)}{v.system_prompt.length > 120 ? "..." : ""}</p>
                     <div className="flex gap-2 flex-wrap">
                       {v.status === "archived" && (
-                        <button type="button" onClick={() => handleCreateDraft(v.id)} disabled={creatingDraft === v.id}
-                          className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 disabled:opacity-50">
-                          {creatingDraft === v.id ? "..." : "Criar rascunho"}
+                        <button type="button" onClick={() => handleRestore(v.id)} disabled={restoringId === v.id}
+                          className="text-xs px-2 py-0.5 bg-blue-50 text-blue-700 rounded hover:bg-blue-100 disabled:opacity-50">
+                          {restoringId === v.id ? "..." : "Restaurar"}
                         </button>
                       )}
-                      {v.status === "draft" && (
-                        <>
-                          <button type="button" onClick={() => handleActivate(v.id)} disabled={activatingId === v.id}
-                            className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50">
-                            {activatingId === v.id ? "..." : "Ativar"}
-                          </button>
-                          {editingLabel?.id === v.id ? (
-                            <div className="flex gap-1 items-center">
-                              <input value={editingLabel.value} onChange={e => setEditingLabel({ id: v.id, value: e.target.value })}
-                                className="border border-gray-300 rounded px-1 py-0.5 text-xs w-32 focus:outline-none"
-                                placeholder="Rótulo..."
-                                onKeyDown={e => { if (e.key === "Enter") handleSaveLabel(v.id, editingLabel.value); if (e.key === "Escape") setEditingLabel(null) }}
-                              />
-                              <button type="button" onClick={() => handleSaveLabel(v.id, editingLabel.value)} className="text-xs text-blue-600 hover:underline">Salvar</button>
-                              <button type="button" onClick={() => setEditingLabel(null)} className="text-xs text-gray-400 hover:underline">×</button>
-                            </div>
-                          ) : (
-                            <button type="button" onClick={() => setEditingLabel({ id: v.id, value: v.label || "" })}
-                              className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
-                              Renomear
-                            </button>
-                          )}
-                          <button type="button" onClick={() => handleDeleteDraft(v.id)} disabled={deletingVerId === v.id}
-                            className="text-xs px-2 py-0.5 bg-red-50 text-red-600 rounded hover:bg-red-100 disabled:opacity-50">
-                            {deletingVerId === v.id ? "..." : "Excluir"}
-                          </button>
-                        </>
-                      )}
+                      <a
+                        href={`/agents/${id}/prompt-versions/compare?v1=${v.id}&v2=${versions.find(x => x.status === "active")?.id ?? v.id}`}
+                        className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+                      >
+                        Comparar
+                      </a>
                     </div>
                   </div>
                 ))}
-                {(versionTab === "active" ? activeVersions : versionTab === "draft" ? draftVersions : archivedVersions).length === 0 && (
-                  <p className="text-xs text-gray-400 text-center py-3">
-                    {versionTab === "draft" ? "Nenhum rascunho. Use 'Criar rascunho' em versões arquivadas." : versionTab === "archived" ? "Nenhuma versão arquivada ainda." : "Nenhuma versão ativa."}
-                  </p>
-                )}
               </div>
             </div>
           )}

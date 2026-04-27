@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Bot, Plus, Sparkles } from "lucide-react"
+import { Bot, Loader2, Plus, Sparkles } from "lucide-react"
 import { motion } from "framer-motion"
 import { getAgents, type Agent } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
@@ -12,6 +12,10 @@ import { Breadcrumb } from "@/components/ui/Breadcrumb"
 export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [loading, setLoading] = useState(true)
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+
+  function markDeleting(id: number) { setDeletingIds(prev => new Set([...prev, id])) }
+  function unmarkDeleting(id: number) { setDeletingIds(prev => { const s = new Set(prev); s.delete(id); return s }) }
 
   useEffect(() => {
     getAgents()
@@ -63,10 +67,10 @@ export default function AgentsPage() {
               {agents.map((a, i) => (
                 <motion.tr
                   key={a.id}
-                  className="hover:bg-gray-50"
+                  className={deletingIds.has(a.id) ? "pointer-events-none bg-gray-50" : "hover:bg-gray-50"}
                   initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.03, duration: 0.15 }}
+                  animate={{ opacity: deletingIds.has(a.id) ? 0.4 : 1, y: 0 }}
+                  transition={{ duration: 0.2 }}
                 >
                   <td className="px-4 py-3 font-medium text-gray-900">{a.name || <span className="text-gray-400 italic">sem nome</span>}</td>
                   <td className="px-4 py-3">
@@ -81,20 +85,24 @@ export default function AgentsPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="flex items-center justify-end gap-3">
-                      {a.system_prompt && (
-                        <Link
-                          href={`/agents/${a.id}/optimize`}
-                          className="flame-link-action flex items-center gap-1"
-                          title="Sugerir otimização do system prompt com base nas avaliações"
-                        >
-                          <Sparkles className="h-3.5 w-3.5" />
-                          Otimizar
-                        </Link>
+                      {deletingIds.has(a.id) ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-300" />
+                      ) : (
+                        <>
+                          {a.system_prompt && (
+                            <Link href={`/agents/${a.id}/optimize`} className="flame-link-action flex items-center gap-1" title="Sugerir otimização do system prompt com base nas avaliações">
+                              <Sparkles className="h-3.5 w-3.5" />
+                              Otimizar
+                            </Link>
+                          )}
+                          <Link href={`/agents/${a.id}/edit`} className="flame-link-action">Editar</Link>
+                          <DeleteButton id={a.id} path="/agents"
+                            onDeleteStart={() => markDeleting(a.id)}
+                            onDeleteUndo={() => unmarkDeleting(a.id)}
+                            onDeleted={() => { setAgents(prev => prev.filter(x => x.id !== a.id)); unmarkDeleting(a.id) }}
+                          />
+                        </>
                       )}
-                      <Link href={`/agents/${a.id}/edit`} className="flame-link-action">
-                        Editar
-                      </Link>
-                      <DeleteButton id={a.id} path="/agents" onDeleted={() => setAgents(prev => prev.filter(x => x.id !== a.id))} />
                     </div>
                   </td>
                 </motion.tr>

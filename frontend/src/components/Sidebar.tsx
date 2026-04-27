@@ -11,6 +11,7 @@ import {
   FlaskConical,
   GitCompare,
   LayoutDashboard,
+  MessageSquare,
   Play,
   Settings,
   ShieldCheck,
@@ -36,6 +37,7 @@ const sections = [
       { href: "/agents", label: "Agentes", icon: Bot },
       { href: "/profiles", label: "Perfis de Avaliação", icon: SlidersHorizontal },
       { href: "/guardrails", label: "Guardrails", icon: ShieldCheck },
+      { href: "/playground", label: "Playground", icon: MessageSquare },
     ],
   },
   {

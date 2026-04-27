@@ -18,19 +18,37 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 # ── System prompt ────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Você é o assistente do AgentEval. Responda SEMPRE em português, de forma direta e curta.
+SYSTEM_PROMPT = """Você é um assistente especialista em Quality Assurance para agentes de IA no Santander AgentEval.
+Sua missão principal é ajudar o usuário a criar casos de teste profissionais e abrangentes.
 
-Regras:
-- Respostas curtas. Sem introduções, sem resumos finais, sem listas longas desnecessárias.
-- Se faltar informação para criar algo, assuma valores sensatos e execute sem perguntar.
-- Defaults ao criar agente: connection_type=http, request_body={"message":"{{message}}"}, output_field=response, api_key="".
-- Defaults ao criar perfil: relevancy ON (threshold 0.7), demais métricas OFF.
-- Defaults ao criar caso de teste: expected_output e context vazios.
-- hallucination/toxicity/bias: score 0 = ótimo, score 1 = péssimo.
-- Para testar um agente (tool test_agent): SEMPRE peça o contexto do agente (o que ele faz, como deve se comportar) se a mensagem não o incluir. Não chame test_agent sem esse contexto.
-- Ao usar test_agent sem profile_id, o perfil é selecionado ou criado automaticamente.
-- Após test_agent retornar, NÃO diga que a execução foi iniciada. Os cenários foram criados mas a execução ainda não começou. Apresente o link retornado como [Revisar e executar](/runs/new?...) para que o usuário revise antes de disparar.
-- Ao mencionar páginas do sistema, use SEMPRE links markdown clicáveis. Exemplos: [Ver execução #20](/runs/20), [Agentes](/agents), [Datasets](/datasets). Nunca escreva o caminho como texto simples.
+Regras gerais:
+- Responda SEMPRE em português, de forma direta e objetiva.
+- Respostas curtas. Sem introduções longas, sem resumos desnecessários.
+- Ao mencionar páginas do sistema, use SEMPRE links markdown clicáveis. Exemplos: [Ver execução #20](/runs/20), [Agentes](/agents). Nunca escreva o caminho como texto simples.
+- hallucination/toxicity/bias: score 0 = ótimo (lower-is-better).
+
+REGRA CRÍTICA — Sugestão de casos de teste:
+NUNCA gere casos de teste manualmente em texto livre. SEMPRE chame a tool `suggest_test_cases` — ela usa IA especializada para gerar os casos com a estrutura correta (título, tipo, expected_output, context, tags, turns).
+
+Fluxo OBRIGATÓRIO quando o usuário pedir sugestões ou quiser testar um agente:
+1. PRIMEIRO chame `suggest_test_cases` com o agent_id correto.
+   - Se o resultado retornar `needs_context: true`, então pergunte ao usuário pelo contexto/instruções do agente.
+   - Se o usuário fornecer contexto, chame `suggest_test_cases` novamente com `agent_context` preenchido.
+2. Após a tool retornar os cenários com sucesso, inclua NO SEU RESPONSE o bloco JSON abaixo EXATAMENTE neste formato (sem alterar os dados retornados):
+
+Aqui estão X sugestões de casos de teste para **[Nome do Agente]**:
+
+```json
+{"__type":"test_case_suggestions","agent_id":<id>,"cases":[<array EXATO retornado pela tool, sem modificar>]}
+```
+
+Selecione os casos que deseja criar.
+
+3. NÃO crie casos automaticamente. Use `create_test_case` SOMENTE quando o usuário pedir explicitamente.
+4. Para outras ações (listar agentes, criar perfis, iniciar runs), ajude normalmente.
+
+Defaults ao criar agente: connection_type=http, request_body={"message":"{{message}}"}, output_field=response.
+Defaults ao criar perfil: relevancy ON (threshold 0.7), demais métricas OFF.
 """
 
 # ── Definição das tools ───────────────────────────────────────────────────────
@@ -190,17 +208,16 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "test_agent",
-            "description": "Gera automaticamente cenários de teste multi-turn para um agente, cria os casos de teste no sistema e inicia uma execução de avaliação. Use quando o usuário pedir para testar um agente.",
+            "name": "suggest_test_cases",
+            "description": "Gera sugestões de casos de teste para um agente usando IA. Retorna os casos SEM criar nada — o usuário escolhe quais criar. Use quando o usuário pedir sugestões ou quiser testar um agente.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "agent_id": {"type": "integer", "description": "ID do agente a ser testado"},
-                    "agent_context": {"type": "string", "description": "Descrição do agente: o que faz, como deve se comportar, restrições e casos de uso esperados."},
-                    "profile_id": {"type": "integer", "description": "ID do perfil de avaliação a usar (opcional — se omitido, usa o primeiro disponível ou cria um padrão)."},
-                    "n_scenarios": {"type": "integer", "description": "Número de cenários de teste a gerar (padrão: 5)."},
+                    "agent_id": {"type": "integer", "description": "ID do agente"},
+                    "agent_context": {"type": "string", "description": "Contexto ou instruções do agente (opcional se ele tiver system prompt cadastrado)."},
+                    "n_scenarios": {"type": "integer", "description": "Número de sugestões a gerar (padrão: 6)."},
                 },
-                "required": ["agent_id", "agent_context"],
+                "required": ["agent_id"],
             },
         },
     },
@@ -230,8 +247,8 @@ def _run_tool(name: str, args: dict, db: Session, workspace_id: int) -> str:
             return _tool_list_runs(args, db, workspace_id)
         if name == "get_agent_timeline":
             return _tool_get_agent_timeline(args, db, workspace_id)
-        if name == "test_agent":
-            return _tool_test_agent(args, db, workspace_id)
+        if name == "suggest_test_cases":
+            return _tool_suggest_test_cases(args, db, workspace_id)
         return f"Tool desconhecida: {name}"
     except Exception as e:
         return f"Erro ao executar {name}: {str(e)}"
@@ -475,19 +492,25 @@ def _tool_get_agent_timeline(args: dict, db: Session, workspace_id: int) -> str:
 
 
 def _generate_test_scenarios(agent_name: str, context: str, n: int) -> list:
-    """Chama o LLM para gerar n cenários de teste multi-turn para o agente."""
+    """Chama o LLM para gerar n casos de teste ricos para o agente."""
     import re as _re
     client = _get_llm_client()
     model = os.getenv("JUDGE_MODEL", "gpt-4")
     prompt = (
-        f'Crie {n} cenários de teste multi-turn para o agente "{agent_name}".\n\n'
-        f"Contexto do agente:\n{context}\n\n"
-        f'Retorne JSON com chave "scenarios": array de {n} objetos, cada um com:\n'
-        '- "title": título descritivo do cenário\n'
-        '- "tags": tags separadas por vírgula\n'
-        '- "turns": array de 2 a 4 objetos {"input": string, "expected_output": string ou null}\n\n'
-        "Cubra cenários de: fluxo feliz, caso extremo, ambiguidade, informação incompleta, comportamento inesperado.\n"
-        "Retorne apenas o JSON, sem explicações."
+        f'Crie {n} casos de teste para o agente "{agent_name}".\n\n'
+        f"Contexto/instruções do agente:\n{context}\n\n"
+        f'Retorne JSON com chave "scenarios": array de exatamente {n} objetos, cada um com:\n'
+        '- "title": título descritivo do caso\n'
+        '- "type": "happy_path" | "edge_case" | "scope_escape" | "ambiguity" | "error"\n'
+        '- "input": mensagem do usuário (string) — para single-turn\n'
+        '- "expected_output": resposta esperada pelo agente (string realista baseada no contexto)\n'
+        '- "context": array de 2-3 strings com fatos do contexto relevantes para avaliar este caso\n'
+        '- "tags": string com tags separadas por vírgula\n'
+        '- "turns": null para single-turn, ou array de 2-4 objetos {"input": string, "expected_output": string} para multi-turn\n\n'
+        f"Distribua os tipos: 2 happy_path, 2 edge_case, 1 scope_escape, 1 ambiguity (ajuste proporcionalmente para {n} casos).\n"
+        "expected_output deve ser uma resposta realista e detalhada que o agente ideal daria.\n"
+        "Para scope_escape, o usuário tenta fazer o agente sair do seu papel/escopo.\n"
+        "Retorne APENAS o JSON válido, sem explicações ou markdown."
     )
     try:
         resp = client.chat.completions.create(
@@ -504,71 +527,36 @@ def _generate_test_scenarios(agent_name: str, context: str, n: int) -> list:
     return []
 
 
-def _tool_test_agent(args: dict, db: Session, workspace_id: int) -> str:
+def _tool_suggest_test_cases(args: dict, db: Session, workspace_id: int) -> str:
     agent = db.query(Agent).filter(Agent.id == args["agent_id"], Agent.workspace_id == workspace_id).first()
     if not agent:
-        return f"Agente ID {args['agent_id']} não encontrado."
+        return json.dumps({"error": f"Agente ID {args['agent_id']} não encontrado."}, ensure_ascii=False)
 
-    n = args.get("n_scenarios", 5)
-    context = args["agent_context"]
+    agent_context = args.get("agent_context", "")
+    context = ""
     if agent.system_prompt:
-        context = f"System prompt do agente:\n{agent.system_prompt}\n\nContexto adicional:\n{context}"
+        context = agent.system_prompt
+        if agent_context:
+            context += f"\n\nContexto adicional:\n{agent_context}"
+    elif agent_context:
+        context = agent_context
+    else:
+        return json.dumps({
+            "needs_context": True,
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+            "message": f"O agente '{agent.name}' não tem system prompt cadastrado. Peça ao usuário o contexto ou instruções do agente antes de gerar sugestões.",
+        }, ensure_ascii=False)
+
+    n = args.get("n_scenarios", 6)
     scenarios = _generate_test_scenarios(agent.name, context, n)
     if not scenarios:
-        return "Não foi possível gerar cenários. Tente detalhar mais o contexto do agente."
-
-    # Criar casos de teste com turns
-    tc_ids = []
-    for s in scenarios:
-        turns = s.get("turns") or []
-        tc = TestCase(
-            title=s.get("title", f"Cenário auto-gerado {len(tc_ids) + 1}"),
-            input=turns[0]["input"] if turns else s.get("title", ""),
-            turns=turns if turns else None,
-            tags=s.get("tags", "auto-gerado,multi-turn"),
-            workspace_id=workspace_id,
-        )
-        db.add(tc)
-        db.commit()
-        db.refresh(tc)
-        tc_ids.append(tc.id)
-
-    # Selecionar ou criar perfil de avaliação
-    profile_id = args.get("profile_id")
-    if profile_id:
-        profile = db.query(EvaluationProfile).filter(
-            EvaluationProfile.id == profile_id,
-            EvaluationProfile.workspace_id == workspace_id,
-        ).first()
-        if not profile:
-            return f"Perfil ID {profile_id} não encontrado."
-    else:
-        profile = db.query(EvaluationProfile).filter(
-            EvaluationProfile.workspace_id == workspace_id,
-        ).first()
-        if not profile:
-            profile = EvaluationProfile(
-                name="Padrão (auto)",
-                use_relevancy=True,
-                relevancy_threshold=0.7,
-                use_hallucination=True,
-                hallucination_threshold=0.5,
-                workspace_id=workspace_id,
-            )
-            db.add(profile)
-            db.commit()
-            db.refresh(profile)
-
-    cases_param = ",".join(str(i) for i in tc_ids)
-    link = f"/runs/new?agent={agent.id}&profile={profile.id}&cases={cases_param}"
+        return json.dumps({"error": "Não foi possível gerar sugestões. Verifique se o LLM judge está configurado."}, ensure_ascii=False)
 
     return json.dumps({
-        "agente": agent.name,
-        "perfil": profile.name,
-        "cenarios_criados": len(tc_ids),
-        "link": link,
-        "mensagem": f"Criei {len(tc_ids)} cenários de teste. Acesse o link para revisar e disparar a execução.",
-        "cenarios": [{"id": tc_ids[i], "titulo": s.get("title", "")} for i, s in enumerate(scenarios)],
+        "agent_id": agent.id,
+        "agent_name": agent.name,
+        "cases": scenarios,
     }, ensure_ascii=False)
 
 
