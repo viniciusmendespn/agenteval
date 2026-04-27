@@ -48,12 +48,13 @@ export default function DeleteButton({ id, path, onDeleted, onDeleteStart, onDel
     if (undone) return
 
     try {
-      await fetch(`${API}${path}/${id}`, { method: "DELETE", headers: workspaceHeaders(false) })
+      const res = await fetch(`${API}${path}/${id}`, { method: "DELETE", headers: workspaceHeaders(false) })
+      if (!res.ok) throw new Error(await res.text())
       if (onDeleted) onDeleted()
       else router.refresh()
-    } catch {
+    } catch (err) {
       onDeleteUndo?.()
-      toastError("Erro ao excluir. Tente novamente.")
+      toastError(err instanceof Error ? err.message : "Erro ao excluir. Tente novamente.")
     }
   }
 

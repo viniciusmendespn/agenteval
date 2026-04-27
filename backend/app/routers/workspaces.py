@@ -1,5 +1,8 @@
+import logging
 from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from ..database import get_db
 from ..models import (
@@ -123,40 +126,46 @@ def delete_workspace(
     if not ws:
         raise HTTPException(404, "Workspace não encontrado")
 
-    # 1. TestResults (FK → TestRun)
-    run_ids = [r[0] for r in db.query(TestRun.id).filter(TestRun.workspace_id == workspace_id)]
-    if run_ids:
-        db.query(TestResult).filter(TestResult.run_id.in_(run_ids)).delete(synchronize_session=False)
+    try:
+        # 1. TestResults (FK → TestRun)
+        run_ids = [r[0] for r in db.query(TestRun.id).filter(TestRun.workspace_id == workspace_id)]
+        if run_ids:
+            db.query(TestResult).filter(TestResult.run_id.in_(run_ids)).delete(synchronize_session=False)
 
-    # 2. DatasetResults (FK → DatasetEvaluation)
-    eval_ids = [r[0] for r in db.query(DatasetEvaluation.id).filter(DatasetEvaluation.workspace_id == workspace_id)]
-    if eval_ids:
-        db.query(DatasetResult).filter(DatasetResult.evaluation_id.in_(eval_ids)).delete(synchronize_session=False)
+        # 2. DatasetResults (FK → DatasetEvaluation)
+        eval_ids = [r[0] for r in db.query(DatasetEvaluation.id).filter(DatasetEvaluation.workspace_id == workspace_id)]
+        if eval_ids:
+            db.query(DatasetResult).filter(DatasetResult.evaluation_id.in_(eval_ids)).delete(synchronize_session=False)
 
-    # 3. DatasetRecords (FK → Dataset)
-    ds_ids = [r[0] for r in db.query(Dataset.id).filter(Dataset.workspace_id == workspace_id)]
-    if ds_ids:
-        db.query(DatasetRecord).filter(DatasetRecord.dataset_id.in_(ds_ids)).delete(synchronize_session=False)
+        # 3. DatasetRecords (FK → Dataset)
+        ds_ids = [r[0] for r in db.query(Dataset.id).filter(Dataset.workspace_id == workspace_id)]
+        if ds_ids:
+            db.query(DatasetRecord).filter(DatasetRecord.dataset_id.in_(ds_ids)).delete(synchronize_session=False)
 
-    # 4. PromptVersionComparisons (FK → AgentPromptVersion)
-    apv_ids = [r[0] for r in db.query(AgentPromptVersion.id).filter(AgentPromptVersion.workspace_id == workspace_id)]
-    if apv_ids:
-        db.query(PromptVersionComparison).filter(
-            PromptVersionComparison.v1_id.in_(apv_ids) | PromptVersionComparison.v2_id.in_(apv_ids)
-        ).delete(synchronize_session=False)
+        # 4. PromptVersionComparisons (FK → AgentPromptVersion)
+        apv_ids = [r[0] for r in db.query(AgentPromptVersion.id).filter(AgentPromptVersion.workspace_id == workspace_id)]
+        if apv_ids:
+            db.query(PromptVersionComparison).filter(
+                PromptVersionComparison.v1_id.in_(apv_ids) | PromptVersionComparison.v2_id.in_(apv_ids)
+            ).delete(synchronize_session=False)
 
-    # 5-11. Remaining tables by workspace_id, then the workspace itself
-    for model in (
-        Evaluation, AgentPromptVersion, Guardrail,
-        DatasetEvaluation, Dataset, TestRun,
-        TestCase, EvaluationProfile, Agent,
-        WorkspaceMember,
-    ):
-        db.query(model).filter(model.workspace_id == workspace_id).delete(synchronize_session=False)
+        # 5-11. Remaining tables by workspace_id, then the workspace itself
+        for model in (
+            Evaluation, AgentPromptVersion, Guardrail,
+            DatasetEvaluation, Dataset, TestRun,
+            TestCase, EvaluationProfile, Agent,
+            WorkspaceMember,
+        ):
+            db.query(model).filter(model.workspace_id == workspace_id).delete(synchronize_session=False)
 
-    db.delete(ws)
-    db.commit()
-    return {"ok": True}
+        db.delete(ws)
+        db.commit()
+        logger.info("Workspace %d (%s) deleted by %s", workspace_id, ws.name, x_user_email)
+        return {"ok": True}
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to delete workspace %d", workspace_id)
+        raise HTTPException(500, "Erro ao excluir workspace. Tente novamente.")
 
 
 @router.post("/{workspace_id}/members", status_code=201)
