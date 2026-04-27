@@ -13,6 +13,7 @@ import {
 import { WorkspaceListSkeleton } from "@/components/Skeleton"
 import { LoadingButton } from "@/components/ui/LoadingButton"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
+import DeleteButton from "@/components/DeleteButton"
 
 export default function WorkspaceSettingsPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -23,6 +24,10 @@ export default function WorkspaceSettingsPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set())
+
+  const markDeleting = (id: number) => setDeletingIds(prev => new Set(prev).add(id))
+  const unmarkDeleting = (id: number) => setDeletingIds(prev => { const s = new Set(prev); s.delete(id); return s })
 
   function load() {
     setLoading(true)
@@ -147,8 +152,12 @@ export default function WorkspaceSettingsPage() {
           <div className="divide-y divide-gray-100">
             {workspaces.map(workspace => {
               const active = String(workspace.id) === activeId
+              const deleting = deletingIds.has(workspace.id)
               return (
-                <div key={workspace.id} className="flex items-center justify-between gap-4 px-5 py-4">
+                <div
+                  key={workspace.id}
+                  className={`flex items-center justify-between gap-4 px-5 py-4 transition-opacity ${deleting ? "opacity-40 pointer-events-none" : ""}`}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="flame-icon-shell h-10 w-10 shrink-0">
                       <Briefcase className="h-5 w-5 text-red-600" />
@@ -160,16 +169,30 @@ export default function WorkspaceSettingsPage() {
                       </p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => activate(workspace)}
-                    disabled={active}
-                    className={active
-                      ? "flame-button opacity-60 cursor-default"
-                      : "flame-button-secondary"}
-                  >
-                    {active ? "Ativo" : "Ativar"}
-                  </button>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => activate(workspace)}
+                      disabled={active}
+                      className={active
+                        ? "flame-button opacity-60 cursor-default"
+                        : "flame-button-secondary"}
+                    >
+                      {active ? "Ativo" : "Ativar"}
+                    </button>
+                    {workspace.role === "owner" && (
+                      <DeleteButton
+                        id={workspace.id}
+                        path="/workspaces"
+                        onDeleteStart={() => markDeleting(workspace.id)}
+                        onDeleteUndo={() => unmarkDeleting(workspace.id)}
+                        onDeleted={() => {
+                          setWorkspaces(prev => prev.filter(w => w.id !== workspace.id))
+                          unmarkDeleting(workspace.id)
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
               )
             })}

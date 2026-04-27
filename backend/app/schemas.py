@@ -46,6 +46,11 @@ class AgentMetadataSnapshot(BaseModel):
     environment: Optional[str] = None
     tags: list[str] = []
     extra_metadata: dict = {}
+    system_prompt: Optional[str] = None
+    agent_notes: Optional[str] = None
+    connection_type: Optional[str] = None
+    request_body: Optional[str] = None
+    output_field: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -204,6 +209,7 @@ class TestRunOut(BaseModel):
     test_case_ids: list[int]
     status: str
     overall_score: Optional[float]
+    error_count: int = 0
     agent_metadata_snapshot: Optional[AgentMetadataSnapshot] = None
     created_at: datetime
     completed_at: Optional[datetime]
@@ -334,3 +340,14 @@ class WorkspaceOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class WorkspaceSettingsOut(BaseModel):
+    chat_llm_provider_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class WorkspaceSettingsPatch(BaseModel):
+    chat_llm_provider_id: Optional[int] = None

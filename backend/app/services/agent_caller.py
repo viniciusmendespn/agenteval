@@ -1,5 +1,8 @@
 import json
 import httpx
+import logging
+
+logger = logging.getLogger(__name__)
 
 _SKIP_EVENTS = {"meta", "usage", "error", "ping"}
 _STOP_EVENTS = {"done"}
@@ -73,7 +76,14 @@ def _call_http(url: str, api_key: str, message: str, request_body: str, output_f
     payload = _build_payload(request_body, message, session_id, variables, system_prompt)
 
     response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
-    response.raise_for_status()
+    if response.is_error:
+        body = response.text[:500]
+        logger.error("Agent HTTP %s: %s", response.status_code, body)
+        raise httpx.HTTPStatusError(
+            f"HTTP {response.status_code}: {body}",
+            request=response.request,
+            response=response,
+        )
 
     data = response.json()
     return _resolve_path(data, output_field)

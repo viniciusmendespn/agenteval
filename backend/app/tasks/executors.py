@@ -1,3 +1,4 @@
+import logging
 import time
 import uuid
 from datetime import datetime
@@ -10,6 +11,8 @@ from ..models import (
 from ..services.agent_caller import call_agent
 from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
 from ..services.judge_llm import resolve_judge
+
+logger = logging.getLogger(__name__)
 
 
 def _sync_evaluation(db, *, source_run_id=None, source_eval_id=None, status, overall_score, completed_at):
@@ -40,31 +43,52 @@ def execute_run_core(run_id: int):
         judge_override = resolve_judge(db, getattr(profile, "llm_provider_id", None))
         guardrails = _load_guardrails(db, profile)
 
+        run.agent_metadata_snapshot = _agent_metadata_snapshot(agent)
+        db.commit()
+
+        logger.info("Run %d started: %d test cases", run_id, len(ordered))
+
         all_scores: list[float] = []
+        error_count: int = 0
         cancelled = False
         for tc in ordered:
-            # Cancela via status no DB — funciona com qualquer backend de fila
-            if db.get(TestRun, run_id).status == "cancelled":
-                cancelled = True
+            current_status = db.get(TestRun, run_id).status
+            if current_status in ("cancelled", "failed"):
+                # "failed" = setado por _recover_stuck_runs() num restart; interrompe thread zumbi
+                cancelled = current_status == "cancelled"
                 break
             result = _evaluate_case(run_id, tc, agent, profile, judge_override=judge_override, guardrails=guardrails)
             if result.scores:
                 for metric_name, score in result.scores.items():
                     normalized = (1.0 - score) if metric_name in LOWER_IS_BETTER else score
                     all_scores.append(normalized)
+            elif result.error:
+                error_count += 1
+                logger.warning("Run %d / tc %d error: %s", run_id, tc.id, result.error[:200])
+
+            # Upsert: garante apenas um resultado por test_case neste run
+            db.query(TestResult).filter(
+                TestResult.run_id == run_id, TestResult.test_case_id == tc.id
+            ).delete(synchronize_session=False)
             db.add(result)
             db.commit()
 
         if not cancelled:
-            run.status = "completed"
+            run.status = "completed" if all_scores else "failed"
         run.overall_score = round(sum(all_scores) / len(all_scores), 4) if all_scores else None
         run.completed_at = datetime.utcnow()
         db.commit()
+
+        logger.info(
+            "Run %d finished: status=%s score=%s errors=%d",
+            run_id, run.status, run.overall_score, error_count,
+        )
 
         _sync_evaluation(db, source_run_id=run_id,
                          status=run.status, overall_score=run.overall_score, completed_at=run.completed_at)
 
     except Exception:
+        logger.exception("Unexpected error in run %d", run_id)
         try:
             run = db.get(TestRun, run_id)
             if run:
@@ -120,7 +144,7 @@ def _load_guardrails(db, profile: EvaluationProfile) -> list[dict]:
 
 
 def _agent_metadata_snapshot(agent: Agent) -> dict:
-    """Captura os metadados do agente no momento da execução."""
+    """Captura o estado completo do agente no momento da execução."""
     return {
         "model_provider": getattr(agent, "model_provider", None),
         "model_name": getattr(agent, "model_name", None),
@@ -129,6 +153,11 @@ def _agent_metadata_snapshot(agent: Agent) -> dict:
         "environment": getattr(agent, "environment", None),
         "tags": getattr(agent, "tags", None) or [],
         "extra_metadata": getattr(agent, "extra_metadata", None) or {},
+        "system_prompt": getattr(agent, "system_prompt", None),
+        "agent_notes": getattr(agent, "agent_notes", None),
+        "connection_type": getattr(agent, "connection_type", None),
+        "request_body": getattr(agent, "request_body", None),
+        "output_field": getattr(agent, "output_field", None),
     }
 
 
@@ -170,72 +199,72 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
     session_id = str(uuid.uuid4())
     turns = tc.turns if (tc.turns and len(tc.turns) > 0) else None
 
-    try:
-        if turns is None:
-            t0 = time.time()
-            actual_output = call_agent(
-                url=agent.url,
-                api_key=agent.api_key,
-                message=tc.input,
-                request_body=agent.request_body or '{"message": "{{message}}"}',
-                output_field=agent.output_field,
-                connection_type=agent.connection_type,
-                session_id=session_id,
-                variables=tc.variables or {},
-                token_url=getattr(agent, "token_url", None),
-                token_request_body=getattr(agent, "token_request_body", None),
-                token_output_field=getattr(agent, "token_output_field", None),
-                token_header_name=getattr(agent, "token_header_name", None),
-                system_prompt=agent.system_prompt or "",
-            )
-            response_time_ms = (time.time() - t0) * 1000
-            scores, reasons = _call_evaluate(tc.input, actual_output, tc.expected_output, tc.context, response_time_ms, profile, system_prompt=agent.system_prompt, judge_override=judge_override, guardrails=guardrails)
+    _call_kwargs = dict(
+        url=agent.url,
+        api_key=agent.api_key,
+        request_body=agent.request_body or '{"message": "{{message}}"}',
+        output_field=agent.output_field,
+        connection_type=agent.connection_type,
+        session_id=session_id,
+        variables=tc.variables or {},
+        token_url=getattr(agent, "token_url", None),
+        token_request_body=getattr(agent, "token_request_body", None),
+        token_output_field=getattr(agent, "token_output_field", None),
+        token_header_name=getattr(agent, "token_header_name", None),
+        system_prompt=agent.system_prompt or "",
+    )
+
+    if turns is None:
+        t0 = time.time()
+        try:
+            actual_output = call_agent(message=tc.input, **_call_kwargs)
+        except Exception as e:
+            return TestResult(run_id=run_id, test_case_id=tc.id, passed=False,
+                              error=f"Agente: {e}")
+        response_time_ms = (time.time() - t0) * 1000
+        try:
+            scores, reasons = _call_evaluate(tc.input, actual_output, tc.expected_output, tc.context,
+                                             response_time_ms, profile, system_prompt=agent.system_prompt,
+                                             judge_override=judge_override, guardrails=guardrails)
             thresholds = _build_thresholds(profile, guardrails)
             passed = compute_passed(scores, thresholds) if scores else True
             return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=actual_output,
                               scores=scores, reasons=reasons, passed=passed, turns_executed=1)
-        else:
-            last_output = last_input = last_expected = None
-            total_time_ms = 0.0
-            turn_outputs_list: list[dict] = []
-            for i, turn in enumerate(turns):
-                t0 = time.time()
-                try:
-                    output = call_agent(
-                        url=agent.url,
-                        api_key=agent.api_key,
-                        message=turn["input"],
-                        request_body=agent.request_body or '{"message": "{{message}}"}',
-                        output_field=agent.output_field,
-                        connection_type=agent.connection_type,
-                        session_id=session_id,
-                        variables=tc.variables or {},
-                        token_url=getattr(agent, "token_url", None),
-                        token_request_body=getattr(agent, "token_request_body", None),
-                        token_output_field=getattr(agent, "token_output_field", None),
-                        token_header_name=getattr(agent, "token_header_name", None),
-                        system_prompt=agent.system_prompt or "",
-                    )
-                except Exception as e:
-                    return TestResult(run_id=run_id, test_case_id=tc.id,
-                                      passed=False, error=f"Turno {i + 1}: {e}",
-                                      turns_executed=i + 1,
-                                      turn_outputs=turn_outputs_list or None)
-                total_time_ms += (time.time() - t0) * 1000
-                turn_outputs_list.append({"input": turn["input"], "output": output})
-                last_output = output
-                last_input = turn["input"]
-                last_expected = turn.get("expected_output")
+        except Exception as e:
+            return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=actual_output,
+                              passed=False, error=f"Avaliação: {e}", turns_executed=1)
+    else:
+        last_output = last_input = last_expected = None
+        total_time_ms = 0.0
+        turn_outputs_list: list[dict] = []
+        for i, turn in enumerate(turns):
+            t0 = time.time()
+            try:
+                output = call_agent(message=turn["input"], **_call_kwargs)
+            except Exception as e:
+                return TestResult(run_id=run_id, test_case_id=tc.id,
+                                  passed=False, error=f"Agente turno {i + 1}: {e}",
+                                  turns_executed=i + 1,
+                                  turn_outputs=turn_outputs_list or None)
+            total_time_ms += (time.time() - t0) * 1000
+            turn_outputs_list.append({"input": turn["input"], "output": output})
+            last_output = output
+            last_input = turn["input"]
+            last_expected = turn.get("expected_output")
 
-            scores, reasons = _call_evaluate(last_input, last_output, last_expected, tc.context, total_time_ms, profile, system_prompt=agent.system_prompt, judge_override=judge_override, guardrails=guardrails)
+        try:
+            scores, reasons = _call_evaluate(last_input, last_output, last_expected, tc.context,
+                                             total_time_ms, profile, system_prompt=agent.system_prompt,
+                                             judge_override=judge_override, guardrails=guardrails)
             thresholds = _build_thresholds(profile, guardrails)
             passed = compute_passed(scores, thresholds) if scores else True
             return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=last_output,
                               scores=scores, reasons=reasons, passed=passed,
                               turns_executed=len(turns), turn_outputs=turn_outputs_list)
-
-    except Exception as e:
-        return TestResult(run_id=run_id, test_case_id=tc.id, passed=False, error=str(e))
+        except Exception as e:
+            return TestResult(run_id=run_id, test_case_id=tc.id, actual_output=last_output,
+                              passed=False, error=f"Avaliação: {e}",
+                              turns_executed=len(turns), turn_outputs=turn_outputs_list)
 
 
 # ── Dataset evaluations ───────────────────────────────────────────────────────
@@ -256,25 +285,37 @@ def execute_evaluation_core(eval_id: int):
         judge_override = resolve_judge(db, getattr(profile, "llm_provider_id", None))
         guardrails = _load_guardrails(db, profile)
 
+        logger.info("Dataset evaluation %d started: %d records", eval_id, len(records))
+
         all_scores: list[float] = []
+        error_count: int = 0
         for record in records:
             result = _evaluate_record(eval_id, record, profile, system_prompt=dataset_system_prompt, judge_override=judge_override, guardrails=guardrails)
             if result.scores:
                 for metric_name, score in result.scores.items():
                     normalized = (1.0 - score) if metric_name in LOWER_IS_BETTER else score
                     all_scores.append(normalized)
+            elif result.error:
+                error_count += 1
+                logger.warning("Eval %d / record %d error: %s", eval_id, record.id, result.error[:200])
             db.add(result)
             db.commit()
 
-        ev.status = "completed"
+        ev.status = "completed" if all_scores else "failed"
         ev.overall_score = round(sum(all_scores) / len(all_scores), 4) if all_scores else None
         ev.completed_at = datetime.utcnow()
         db.commit()
+
+        logger.info(
+            "Dataset evaluation %d finished: status=%s score=%s errors=%d",
+            eval_id, ev.status, ev.overall_score, error_count,
+        )
 
         _sync_evaluation(db, source_eval_id=eval_id,
                          status=ev.status, overall_score=ev.overall_score, completed_at=ev.completed_at)
 
     except Exception:
+        logger.exception("Unexpected error in dataset evaluation %d", eval_id)
         try:
             ev = db.get(DatasetEvaluation, eval_id)
             if ev:

@@ -195,9 +195,16 @@ export default function RunsPage() {
                     {r.profile_name ?? <span className="text-gray-400">—</span>}
                   </td>
                   <td className="px-5 py-3">
-                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${statusColor[r.status]}`}>
-                      {statusLabel[r.status] ?? r.status}
-                    </span>
+                    <div className="flex flex-col gap-0.5">
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium w-fit ${statusColor[r.status]}`}>
+                        {statusLabel[r.status] ?? r.status}
+                      </span>
+                      {r.error_count > 0 && (
+                        <span className="text-[10px] text-red-500">
+                          ⚠ {r.error_count} erro{r.error_count > 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-5 py-3 text-gray-500">{r.test_case_ids.length}</td>
                   <td className="px-5 py-3"><ScoreBadge score={r.overall_score} /></td>

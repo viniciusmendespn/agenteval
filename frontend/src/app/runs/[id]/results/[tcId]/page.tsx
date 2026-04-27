@@ -17,7 +17,9 @@ export default function ResultDetailPage() {
     async function load() {
       try {
         const run = await getRun(Number(id))
-        const found = run.results.find(r => r.test_case_id === Number(tcId))
+        // Usa o resultado mais recente (o backend já deduplica, mas por segurança pega o último)
+        const matching = run.results.filter(r => r.test_case_id === Number(tcId))
+        const found = matching.at(-1) ?? matching[0]
         if (!found) { setError(true); return }
         setResult(found)
         getTestCase(Number(tcId)).then(setTc).catch(() => {})

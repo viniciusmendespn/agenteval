@@ -2,10 +2,10 @@
 import { useEffect, useState, useMemo } from "react"
 import { useParams } from "next/navigation"
 import { getRun, getTestCases, getProfile, getRunBreakdown, cancelRun,
-  type TestRun, type TestCase, type EvaluationProfile, type RunBreakdown } from "@/lib/api"
+  type TestRun, type TestCase, type EvaluationProfile, type RunBreakdown, type AgentMetadataSnapshot } from "@/lib/api"
 import { getMetricInfo, normalizeScore, scoreColorClasses } from "@/lib/metrics"
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, Tooltip } from "recharts"
-import { Filter, ChevronLeft, Loader2 } from "lucide-react"
+import { Filter, Loader2, ChevronDown, ChevronUp } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/cn"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
@@ -57,6 +57,74 @@ function ScorePills({ scores, criteria = [] }: { scores: Record<string, number>;
           </span>
         )
       })}
+    </div>
+  )
+}
+
+function AgentSnapshot({ snapshot }: { snapshot: AgentMetadataSnapshot }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasText = !!(snapshot.system_prompt || snapshot.agent_notes || snapshot.request_body)
+
+  return (
+    <div className="mb-2">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {snapshot.model_name && (
+          <span className="text-xs bg-blue-50 text-blue-700 border border-blue-100 px-2 py-0.5 rounded font-medium">
+            {snapshot.model_provider ? `${snapshot.model_provider} / ` : ""}{snapshot.model_name}
+          </span>
+        )}
+        {snapshot.environment && (
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
+            {snapshot.environment}
+          </span>
+        )}
+        {snapshot.temperature != null && (
+          <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-medium">
+            temp {snapshot.temperature}
+          </span>
+        )}
+        {snapshot.connection_type && (
+          <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded">
+            {snapshot.connection_type}
+          </span>
+        )}
+        {snapshot.tags?.map(t => (
+          <span key={t} className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded font-medium">
+            {t}
+          </span>
+        ))}
+        {hasText && (
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-0.5 ml-1"
+          >
+            {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {expanded ? "ocultar detalhes" : "ver detalhes"}
+          </button>
+        )}
+      </div>
+      {expanded && hasText && (
+        <div className="mt-2 space-y-2 border-t border-gray-100 pt-2">
+          {snapshot.agent_notes && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-0.5">Notas do agente</p>
+              <p className="text-xs text-gray-600 whitespace-pre-wrap">{snapshot.agent_notes}</p>
+            </div>
+          )}
+          {snapshot.system_prompt && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-0.5">System prompt</p>
+              <pre className="text-xs text-gray-600 bg-gray-50 rounded p-2 whitespace-pre-wrap font-mono max-h-32 overflow-y-auto">{snapshot.system_prompt}</pre>
+            </div>
+          )}
+          {snapshot.request_body && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-0.5">Request body</p>
+              <pre className="text-xs text-gray-600 bg-gray-50 rounded p-2 whitespace-pre-wrap font-mono">{snapshot.request_body}</pre>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -181,6 +249,7 @@ export default function RunPage() {
   const done = run.results.length
   const total = run.test_case_ids.length
   const isRunning = run.status === "running"
+  const errorCount = run.error_count ?? run.results.filter(r => r.error).length
   void profile
 
   return (
@@ -195,33 +264,18 @@ export default function RunPage() {
             <h1 className="text-lg font-bold text-gray-900">Execução #{run.id}</h1>
             <StatusBadge status={run.status} />
           </div>
-          {/* Metadados do agente */}
-          {run.agent_metadata_snapshot && (() => {
-            const m = run.agent_metadata_snapshot
-            const hasAny = m.model_name || m.model_provider !== "custom" || m.temperature != null || m.max_tokens != null || m.environment || (m.tags?.length ?? 0) > 0
-            if (!hasAny) return null
-            return (
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {m.model_name && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">{m.model_name}</span>}
-                {m.model_provider && m.model_provider !== "custom" && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">{m.model_provider}</span>}
-                {m.temperature != null && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">temp {m.temperature}</span>}
-                {m.max_tokens != null && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{m.max_tokens} tokens</span>}
-                {m.environment && m.environment !== "experiment" && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full capitalize">{m.environment}</span>}
-                {m.tags?.map(t => <span key={t} className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">{t}</span>)}
-                {Object.keys(m.extra_metadata || {}).length > 0 && (
-                  <details className="inline">
-                    <summary className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full cursor-pointer list-none hover:bg-gray-200">+extras</summary>
-                    <pre className="absolute z-10 bg-white border border-gray-200 rounded-lg p-2 text-xs shadow-lg max-w-xs whitespace-pre-wrap mt-1">{JSON.stringify(m.extra_metadata, null, 2)}</pre>
-                  </details>
-                )}
-              </div>
-            )
-          })()}
+          {/* Snapshot de configuração do agente */}
+          {run.agent_metadata_snapshot && <AgentSnapshot snapshot={run.agent_metadata_snapshot} />}
           <p className="text-sm text-gray-500">
             {isRunning
               ? `${done} de ${total} casos processados...`
               : `${passed} aprovados · ${total - passed} reprovados · ${total} total`}
           </p>
+          {!isRunning && errorCount > 0 && (
+            <p className="text-xs text-red-600 mt-1">
+              ⚠ {errorCount} caso{errorCount > 1 ? "s" : ""} com erro de execução — veja os detalhes individuais
+            </p>
+          )}
           {isRunning && (
             <div className="mt-2 flex items-center gap-3 w-full max-w-xs">
               <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">

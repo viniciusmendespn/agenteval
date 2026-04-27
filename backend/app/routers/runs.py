@@ -16,7 +16,14 @@ def _enrich_run(run: TestRun, db: Session) -> dict:
     profile = db.get(EvaluationProfile, run.profile_id)
     data["agent_name"] = agent.name if agent else None
     data["profile_name"] = profile.name if profile else None
-    data["results"] = run.results
+
+    # Deduplica: mantém apenas o resultado mais recente (maior id) por test_case_id
+    latest: dict[int, TestResult] = {}
+    for r in sorted(run.results, key=lambda x: x.id):
+        latest[r.test_case_id] = r
+    deduped = list(latest.values())
+    data["results"] = deduped
+    data["error_count"] = sum(1 for r in deduped if r.error)
     return data
 
 

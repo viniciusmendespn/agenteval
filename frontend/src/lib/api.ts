@@ -65,6 +65,11 @@ export type AgentMetadataSnapshot = {
   environment?: string | null
   tags: string[]
   extra_metadata: Record<string, unknown>
+  system_prompt?: string | null
+  agent_notes?: string | null
+  connection_type?: string | null
+  request_body?: string | null
+  output_field?: string | null
 }
 
 export type Agent = {
@@ -226,6 +231,7 @@ export type TestRun = {
   test_case_ids: number[]
   status: "pending" | "running" | "completed" | "failed" | "cancelled"
   overall_score?: number
+  error_count: number
   agent_metadata_snapshot?: AgentMetadataSnapshot | null
   created_at: string
   completed_at?: string
@@ -326,6 +332,13 @@ export const getWorkspaces = () => request<Workspace[]>("/workspaces/")
 export const getCurrentWorkspace = () => request<Workspace>("/workspaces/current")
 export const createWorkspace = (data: { name: string; slug?: string }) =>
   request<Workspace>("/workspaces/", { method: "POST", body: JSON.stringify(data) })
+export const deleteWorkspace = (id: number) =>
+  request<{ ok: boolean }>(`/workspaces/${id}`, { method: "DELETE" })
+
+export type WorkspaceSettings = { chat_llm_provider_id: number | null }
+export const getWorkspaceSettings = () => request<WorkspaceSettings>("/workspaces/settings")
+export const updateWorkspaceSettings = (data: WorkspaceSettings) =>
+  request<WorkspaceSettings>("/workspaces/settings", { method: "PATCH", body: JSON.stringify(data) })
 
 // --- Agents ---
 export const getAgents = () => request<Agent[]>("/agents/")
