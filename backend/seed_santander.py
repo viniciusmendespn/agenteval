@@ -13,7 +13,7 @@ from app.models import (
     Agent, TestCase, EvaluationProfile, TestRun, TestResult,
     Dataset, DatasetRecord, DatasetEvaluation, DatasetResult,
     Workspace, User, WorkspaceMember,
-    Evaluation, AgentPromptVersion, Guardrail,
+    Evaluation, AgentPromptVersion, Guardrail, LLMProvider,
 )
 from app.workspace import ensure_user, ensure_workspace
 
@@ -64,10 +64,15 @@ def _metadata_snapshot(agent: Agent) -> dict:
         "environment": agent.environment,
         "tags": agent.tags or [],
         "extra_metadata": agent.extra_metadata or {},
+        "system_prompt": getattr(agent, "system_prompt", None),
+        "agent_notes": getattr(agent, "agent_notes", None),
+        "connection_type": getattr(agent, "connection_type", None),
+        "request_body": getattr(agent, "request_body", None),
+        "output_field": getattr(agent, "output_field", None),
     }
 
 
-PROFILE_EXTRA_KEYS = {"guardrail_preset_keys"}
+PROFILE_EXTRA_KEYS = {"guardrail_preset_keys", "guardrail_keys"}
 
 
 def gen_scores(quality: str, profile_dict: dict, run_idx: int, total_runs: int) -> tuple[dict, dict]:
@@ -185,6 +190,23 @@ def gen_scores(quality: str, profile_dict: dict, run_idx: int, total_runs: int) 
             "A resposta não atende adequadamente ao critério -- ausência de confirmação ou imprecisão numérica."
         )
 
+    # Guardrails (input/output) -- lower-is-better: 0=ok, 1=violou
+    for gkey, mode in profile_dict.get("guardrail_keys", []):
+        base_pass = {"good": 0.05, "mediocre": 0.25, "bad": 0.70}[quality]
+        s = clamp(base_pass + random.gauss(0, 0.05))
+        if mode in ("input", "both"):
+            scores[f"guardrail_input_{gkey}"] = s
+            reasons[f"guardrail_input_{gkey}"] = (
+                f"Input não violou o guardrail '{gkey}'." if s < 0.5
+                else f"Input pode ter violado o guardrail '{gkey}'."
+            )
+        if mode in ("output", "both"):
+            scores[f"guardrail_output_{gkey}"] = s
+            reasons[f"guardrail_output_{gkey}"] = (
+                f"Output não violou o guardrail '{gkey}'." if s < 0.5
+                else f"Output pode ter violado o guardrail '{gkey}'."
+            )
+
     return scores, reasons
 
 
@@ -251,6 +273,11 @@ PLATCONV_AGENTS = [
             "Responda perguntas sobre saldo, extrato e cartões. "
             "Seja preciso e objetivo."
         ),
+        "agent_notes": (
+            "KB v1 — apenas produtos de conta-corrente e cartões. "
+            "Ferramenta de consulta de saldo integrada (v1, somente leitura). "
+            "Sem acesso a investimentos ou crédito."
+        ),
         "connection_type": "sse",
         "request_body": '{"message": "{{message}}"}',
         "output_field": "response",
@@ -273,6 +300,12 @@ PLATCONV_AGENTS = [
             "Mantenha precisão numérica absoluta. "
             "Identifique-se sempre como assistente digital, nunca como consultor humano."
         ),
+        "agent_notes": (
+            "KB v2 — conta-corrente, cartões, investimentos e crédito pessoal. "
+            "Tool de consulta de saldo atualizada (v2, leitura + histórico). "
+            "Tool de contestação de fatura integrada. "
+            "Guardrails de compliance ativados em 2025-03-20."
+        ),
         "connection_type": "sse",
         "request_body": '{"message": "{{message}}"}',
         "output_field": "response",
@@ -293,9 +326,38 @@ PLATCONV_AGENTS = [
             "Ajude clientes com acesso ao app, recuperação de senha e contestações. "
             "Para casos complexos, encaminhe ao 0800 762 7777."
         ),
+        "agent_notes": (
+            "KB de suporte técnico — guias de reset de senha, desbloqueio de token e contestações. "
+            "Sem acesso a dados financeiros do cliente."
+        ),
         "connection_type": "sse",
         "request_body": '{"message": "{{message}}"}',
         "output_field": "response",
+    },
+    {
+        "name": "Santander Chat -- API OAuth2 (Homologação)",
+        "url": "https://api.santander-homolog.internal/chat/v3",
+        "api_key": "",
+        "model_name": "gpt-4o",
+        "model_provider": "azure-openai",
+        "temperature": 0.3,
+        "max_tokens": 1024,
+        "environment": "staging",
+        "tags": ["banking", "v3", "oauth2"],
+        "extra_metadata": {"deployment": "sant-gpt4o-westus", "auth": "oauth2"},
+        "system_prompt": (
+            "Você é um assistente bancário Santander. "
+            "Responda com precisão sobre produtos bancários e investimentos. "
+            "Confirme sempre o produto antes de informar limites."
+        ),
+        "agent_notes": "Versão de homologação com autenticação OAuth2 (client_credentials). KB idêntica à v2.",
+        "connection_type": "http",
+        "request_body": '{"query": "{{message}}", "session": "{{session_id}}"}',
+        "output_field": "data.answer",
+        "token_url": "https://auth.santander-homolog.internal/oauth2/token",
+        "token_request_body": '{"grant_type": "client_credentials", "client_id": "santander-eval", "client_secret": "demo-secret"}',
+        "token_output_field": "access_token",
+        "token_header_name": "Authorization",
     },
 ]
 
@@ -303,6 +365,7 @@ PLATCONV_PROFILES = [
     {
         "name": "Bancário Rigoroso",
         "guardrail_preset_keys": ["racism_hate", "personal_data", "prompt_injection", "financial_advice"],
+        "guardrail_keys": [("racism_hate", "both"), ("personal_data", "output"), ("prompt_injection", "input"), ("financial_advice", "output")],
         "use_relevancy": True, "relevancy_threshold": 0.7,
         "use_hallucination": True, "hallucination_threshold": 0.3,
         "use_toxicity": False, "toxicity_threshold": 0.3,
@@ -532,6 +595,23 @@ PLATCONV_TEST_CASES_EXPLICIT = [
             },
         ],
     },
+    # Casos com variables — demonstra substituição {{chave}} no request body
+    {
+        "title": "Consulta de limite por agência (variável)",
+        "input": "Qual o limite disponível para clientes da agência {{agencia_nome}}?",
+        "expected_output": "Para clientes da agência {{agencia_nome}} (cód. {{agencia_cod}}), o limite médio disponível no crédito pessoal é de R$ 8.500. Sujeito a análise individual.",
+        "context": ["Limites variam por agência e perfil de crédito.", "Consulta via app ou gerente de conta."],
+        "tags": "crédito,limite,variáveis",
+        "variables": {"agencia_nome": "Paulista", "agencia_cod": "0042"},
+    },
+    {
+        "title": "Boas-vindas personalizada por produto (variável)",
+        "input": "Olá! Sou cliente {{produto}} e tenho uma dúvida sobre minha conta.",
+        "expected_output": "Olá! Que ótimo ter você como cliente {{produto}}. Como posso ajudar você hoje?",
+        "context": ["Clientes de produtos premium têm atendimento prioritário."],
+        "tags": "atendimento,personalização,variáveis",
+        "variables": {"produto": "Santander Select"},
+    },
 ]
 
 # 27 test cases gerados por template para totalizar 47
@@ -649,6 +729,11 @@ PITCHMAKER_AGENTS = [
             "Apresente opções de CDB, LCI, LCA e fundos de investimento. "
             "Informe taxas e prazos com precisão."
         ),
+        "agent_notes": (
+            "KB de investimentos v1 — CDB, LCI, LCA e fundos básicos. "
+            "Sem coleta de perfil do investidor ainda. "
+            "Taxa CDI usada: 10,75% a.a. (fixada em 2025-01-10)."
+        ),
         "connection_type": "sse",
         "request_body": '{"message": "{{message}}"}',
         "output_field": "response",
@@ -669,6 +754,12 @@ PITCHMAKER_AGENTS = [
             "SEMPRE pergunte o perfil do investidor (conservador/moderado/arrojado) antes de qualquer recomendação. "
             "Para CDB e LCI, confirme o prazo mínimo e a tributação. "
             "Nunca informe rentabilidade projetada sem disclaimer de que rendimentos passados não garantem resultados futuros."
+        ),
+        "agent_notes": (
+            "KB v2 — CDB, LCI, LCA, fundos e previdência privada. "
+            "Tool de coleta de perfil do investidor integrada. "
+            "Disclaimer automático de rentabilidade passada ativado. "
+            "Compliance total alinhado com instrução CVM 539."
         ),
         "connection_type": "sse",
         "request_body": '{"message": "{{message}}"}',
@@ -759,6 +850,22 @@ def seed_platconv(db):
     print(f"  Workspace id={wid}  (limpando dados anteriores...)")
     clean_workspace(db, wid)
 
+    # LLM Provider (custom judge) -- demonstra o recurso de juiz customizado
+    llm_provider = db.query(LLMProvider).filter(LLMProvider.name == "Azure OpenAI -- Judge Santander").first()
+    if not llm_provider:
+        llm_provider = LLMProvider(
+            name="Azure OpenAI -- Judge Santander",
+            provider_type="azure",
+            base_url="https://fusion-llm.brq.com",
+            api_key="demo-judge-key",
+            model_name="gpt-4o",
+            api_version="2025-03-01-preview",
+        )
+        db.add(llm_provider)
+        db.flush()
+        db.commit()
+    print(f"  LLM Provider custom: id={llm_provider.id}")
+
     # Agents
     agent_objs = []
     for a in PLATCONV_AGENTS:
@@ -832,8 +939,33 @@ def seed_platconv(db):
         db.add(obj)
         db.flush()
         profile_objs.append(obj)
+
+    # Perfil extra com LLM Provider customizado (demonstra juiz específico por perfil)
+    gids_custom = _get_guardrail_ids(db, "racism_hate", "prompt_injection", "financial_advice")
+    profile_custom_judge = EvaluationProfile(
+        workspace_id=wid,
+        name="Juiz Customizado Santander",
+        use_relevancy=True, relevancy_threshold=0.75,
+        use_hallucination=True, hallucination_threshold=0.25,
+        use_toxicity=True, toxicity_threshold=0.2,
+        use_bias=False, bias_threshold=0.5,
+        use_faithfulness=True, faithfulness_threshold=0.7,
+        use_latency=False, latency_threshold_ms=5000,
+        use_non_advice=True, non_advice_threshold=0.3,
+        non_advice_types=["investimento", "juridico"],
+        use_role_violation=True, role_violation_threshold=0.2,
+        role_violation_role="Assistente digital bancário Santander",
+        use_prompt_alignment=True, prompt_alignment_threshold=0.7,
+        criteria=["Confirmar produto (Visa/Mastercard) antes de informar limite"],
+        llm_provider_id=llm_provider.id,
+        guardrail_ids=gids_custom,
+    )
+    db.add(profile_custom_judge)
+    db.flush()
+    profile_objs.append(profile_custom_judge)
+
     db.commit()
-    print(f"  {len(profile_objs)} perfis de avaliação criados")
+    print(f"  {len(profile_objs)} perfis de avaliação criados (inclui 1 com juiz customizado)")
 
     # Runs
     run_objs = []
@@ -953,6 +1085,13 @@ def seed_platconv(db):
         name="Conversas Produção -- Abril 2025",
         description="Conversas reais exportadas do canal digital em abril/2025 para análise de qualidade.",
         agent_id=agent_objs[1].id,
+        system_prompt=(
+            "Você é um assistente bancário Santander. "
+            "Ao responder sobre cartões, sempre confirme o produto (Visa/Mastercard) antes de informar o limite. "
+            "Para investimentos, pergunte o perfil do investidor antes de recomendar produtos. "
+            "Mantenha precisão numérica absoluta. "
+            "Identifique-se sempre como assistente digital, nunca como consultor humano."
+        ),
     )
     db.add(ds1)
     db.flush()
@@ -999,6 +1138,11 @@ def seed_platconv(db):
         name="Casos Sintéticos -- Bancário",
         description="Casos sintéticos de alta qualidade gerados para cobertura de cenários críticos.",
         agent_id=agent_objs[1].id,
+        system_prompt=(
+            "Você é um assistente bancário Santander. "
+            "Ao responder sobre cartões, sempre confirme o produto (Visa/Mastercard) antes de informar o limite. "
+            "Mantenha precisão numérica absoluta."
+        ),
     )
     db.add(ds2)
     db.flush()
@@ -1538,23 +1682,25 @@ def seed():
         db.close()
 
     print()
-    print("=" * 55)
+    print("=" * 60)
     print("  SEED SANTANDER CONCLUIDO")
-    print("=" * 55)
+    print("=" * 60)
     print("  Workspace PlatConv:")
-    print(f"    Agentes       : {len(PLATCONV_AGENTS)}")
-    print(f"    Casos de teste: {len(PLATCONV_TEST_CASES_EXPLICIT) + len(PLATCONV_TEST_CASES_TEMPLATES)} (20 explicitos + 27 templates)")
-    print(f"    Perfis        : {len(PLATCONV_PROFILES)}")
+    print(f"    Agentes       : {len(PLATCONV_AGENTS)} (incl. 1 OAuth2 + agent_notes em todos)")
+    print(f"    Casos de teste: {len(PLATCONV_TEST_CASES_EXPLICIT) + len(PLATCONV_TEST_CASES_TEMPLATES)} (22 explicitos incl. 2 com variables + 27 templates)")
+    print(f"    Perfis        : {len(PLATCONV_PROFILES) + 1} (incl. 1 com LLM Provider customizado)")
     print(f"    Execucoes     : {len(PLATCONV_RUNS_CONFIG)} ({PLATCONV_RUNS_CONFIG[0][0]} -> {PLATCONV_RUNS_CONFIG[-1][0]})")
-    print("    Datasets      : 4 (20+15+18+12 records)")
+    print("    Datasets      : 4 (20+15+18+12 records, system_prompt nos 2 primeiros)")
     print(f"    A/B compare   : Eval #{ab_id_baseline} vs Eval #{ab_id_optimized}")
     print("  Workspace PitchMaker:")
-    print(f"    Agentes       : {len(PITCHMAKER_AGENTS)}")
+    print(f"    Agentes       : {len(PITCHMAKER_AGENTS)} (agent_notes em todos)")
     print(f"    Casos de teste: {len(PITCHMAKER_TEST_CASES)}")
     print(f"    Perfis        : {len(PITCHMAKER_PROFILES)}")
     print(f"    Execucoes     : {len(PITCHMAKER_RUNS_CONFIG)}")
     print("    Datasets      : 2 (15+10 records)")
-    print("=" * 55)
+    print("  Global:")
+    print("    LLM Provider  : 1 (Azure OpenAI -- Judge Santander)")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
