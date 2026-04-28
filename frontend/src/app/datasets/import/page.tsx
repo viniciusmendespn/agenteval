@@ -37,6 +37,7 @@ export default function ImportDatasetPage() {
 
   const [preview, setPreview] = useState<PreviewResult | null>(null)
   const [createdDatasetId, setCreatedDatasetId] = useState<number | null>(null)
+  const [confirmResult, setConfirmResult] = useState<{ created: number; skipped: number } | null>(null)
 
   useEffect(() => { getAgents().then(setAgents).catch(() => {}) }, [])
 
@@ -89,6 +90,7 @@ export default function ImportDatasetPage() {
     try {
       const result = await confirmImport(buildMapping())
       setCreatedDatasetId(result.dataset_id)
+      setConfirmResult({ created: result.created, skipped: result.skipped })
       setStep("done")
     } catch (e: any) { setError(e.message) }
     finally { setLoading(false) }
@@ -367,11 +369,22 @@ export default function ImportDatasetPage() {
       {/* STEP 3 — Preview */}
       {step === "preview" && preview && (
         <div className="mt-6 space-y-5">
+          {preview.skipped > 0 && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
+              <p className="text-xs font-semibold text-yellow-800 mb-0.5">Atenção: {preview.skipped} registro(s) serão ignorados</p>
+              <p className="text-xs text-yellow-700">
+                O campo de input está vazio ou não encontrado nesses registros. Verifique o mapeamento de campos ou a estrutura dos arquivos.
+              </p>
+            </div>
+          )}
           <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
               <p className="text-sm font-medium text-gray-700">Preview — primeiros {preview.previews.length} registros</p>
               <p className="text-sm text-gray-500">
                 Total: <span className="font-semibold text-blue-600">{preview.record_count.toLocaleString()}</span>
+                {preview.skipped > 0 && (
+                  <span className="ml-2 text-yellow-600">({preview.total_in_files.toLocaleString()} nos arquivos, {preview.skipped} ignorados)</span>
+                )}
               </p>
             </div>
             <div className="divide-y divide-gray-100">
@@ -406,7 +419,15 @@ export default function ImportDatasetPage() {
         <div className="mt-6 bg-white border border-gray-200 rounded-lg p-10 text-center space-y-4">
           <p className="text-4xl">✅</p>
           <p className="text-lg font-semibold text-gray-800">Dataset criado!</p>
-          <p className="text-sm text-gray-500">Agora você pode avaliá-lo com um perfil de métricas.</p>
+          {confirmResult && (
+            <p className="text-sm text-gray-500">
+              <span className="font-semibold text-gray-800">{confirmResult.created.toLocaleString()} registro(s)</span> importado(s) com sucesso.
+              {confirmResult.skipped > 0 && (
+                <span className="ml-1 text-yellow-600">{confirmResult.skipped} ignorado(s) por input vazio.</span>
+              )}
+            </p>
+          )}
+          {!confirmResult && <p className="text-sm text-gray-500">Agora você pode avaliá-lo com um perfil de métricas.</p>}
           <div className="flex gap-3 justify-center mt-2">
             {createdDatasetId && (
               <a href={`/datasets/${createdDatasetId}/evaluate`} className="flame-button">

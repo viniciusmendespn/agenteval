@@ -521,6 +521,8 @@ export type AnalyzeResult = {
 export type PreviewResult = {
   previews: { title?: string; input: string; output?: string; context?: string[]; session_id?: string; turn_order?: number }[]
   record_count: number
+  total_in_files: number
+  skipped: number
 }
 
 export const analyzeImport = (file: File): Promise<AnalyzeResult> => {
@@ -541,7 +543,7 @@ export const previewImport = (data: MappingRequest) =>
   request<PreviewResult>("/imports/preview", { method: "POST", body: JSON.stringify(data) })
 
 export const confirmImport = (data: MappingRequest) =>
-  request<{ dataset_id: number; created: number }>("/imports/confirm", { method: "POST", body: JSON.stringify(data) })
+  request<{ dataset_id: number; created: number; skipped: number }>("/imports/confirm", { method: "POST", body: JSON.stringify(data) })
 
 export type AppendRequest = {
   dataset_id: number

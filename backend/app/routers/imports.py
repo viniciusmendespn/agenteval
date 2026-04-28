@@ -108,18 +108,34 @@ def preview_mapping(data: MappingRequest):
     if not data.file_ids:
         raise HTTPException(400, "Nenhum arquivo informado")
 
-    total = 0
+    session_tag = uuid.uuid4().hex[:4]
+    previews: list[dict] = []
+    total_in_files = 0
+    mapped_count = 0
+    global_index = 0
+
     try:
         for fid in data.file_ids:
-            total += len(load_tmp(fid))
+            file_records = load_tmp(fid)
+            total_in_files += len(file_records)
+            for record in file_records:
+                mapped = _map_record(record, data, global_index, session_tag)
+                global_index += 1
+                if mapped["input"]:
+                    mapped_count += 1
+                    if len(previews) < 5:
+                        previews.append(mapped)
     except FileNotFoundError:
         raise HTTPException(404, "Arquivo temporário não encontrado. Faça o upload novamente.")
 
-    session_tag = uuid.uuid4().hex[:4]
-    first_records = load_tmp(data.file_ids[0])
-    previews = [_map_record(r, data, i, session_tag) for i, r in enumerate(first_records[:5])]
-
-    return {"previews": previews, "record_count": total, "session_tag": session_tag}
+    skipped = total_in_files - mapped_count
+    return {
+        "previews": previews,
+        "record_count": mapped_count,
+        "total_in_files": total_in_files,
+        "skipped": skipped,
+        "session_tag": session_tag,
+    }
 
 
 @router.post("/confirm")
@@ -179,7 +195,7 @@ def confirm_import(
     db.bulk_save_objects(records_to_add)
     db.commit()
 
-    return {"dataset_id": ds.id, "created": len(records_to_add)}
+    return {"dataset_id": ds.id, "created": len(records_to_add), "skipped": global_index - len(records_to_add)}
 
 
 @router.post("/append")
