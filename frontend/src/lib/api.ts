@@ -49,11 +49,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export type LLMProvider = {
   id: number
   name: string
-  provider_type: "azure" | "openai" | "custom"
+  provider_type: "azure" | "openai" | "custom" | "bedrock"
   base_url?: string
-  api_key: string
+  api_key?: string
   model_name: string
   api_version?: string
+  aws_account_id?: string
+  aws_access_key_id?: string
+  aws_secret_access_key?: string
+  aws_session_token?: string
+  aws_region?: string
   created_at: string
 }
 

@@ -15,7 +15,9 @@ def list_providers(db: Session = Depends(get_db)):
 
 @router.post("/", response_model=LLMProviderOut, status_code=201)
 def create_provider(data: LLMProviderCreate, db: Session = Depends(get_db)):
-    provider = LLMProvider(**data.model_dump())
+    payload = data.model_dump()
+    payload["api_key"] = payload.get("api_key") or ""
+    provider = LLMProvider(**payload)
     db.add(provider)
     db.commit()
     db.refresh(provider)
@@ -35,7 +37,9 @@ def update_provider(provider_id: int, data: LLMProviderCreate, db: Session = Dep
     provider = db.get(LLMProvider, provider_id)
     if not provider:
         raise HTTPException(404, "Provedor LLM não encontrado")
-    for k, v in data.model_dump().items():
+    payload = data.model_dump()
+    payload["api_key"] = payload.get("api_key") or ""
+    for k, v in payload.items():
         setattr(provider, k, v)
     db.commit()
     db.refresh(provider)

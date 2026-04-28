@@ -9,9 +9,14 @@ class LLMProviderCreate(BaseModel):
     name: str
     provider_type: str = "azure"
     base_url: Optional[str] = None
-    api_key: str
+    api_key: Optional[str] = None
     model_name: str
     api_version: Optional[str] = None
+    aws_account_id: Optional[str] = None
+    aws_access_key_id: Optional[str] = None
+    aws_secret_access_key: Optional[str] = None
+    aws_session_token: Optional[str] = None
+    aws_region: Optional[str] = None
 
 class LLMProviderOut(LLMProviderCreate):
     id: int

@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Optional
 from openai import AzureOpenAI, OpenAI
@@ -55,10 +56,77 @@ class CustomJudgeLLM(DeepEvalBaseLLM):
         return self._model
 
 
+class BedrockJudgeLLM(DeepEvalBaseLLM):
+    """
+    LLM judge usando AWS Bedrock (API Converse).
+    Suporta qualquer modelo disponível no Bedrock (Claude, Nova, Titan, etc.).
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        aws_access_key_id: str,
+        aws_secret_access_key: str,
+        aws_region: str,
+        aws_session_token: str | None = None,
+        aws_account_id: str | None = None,
+    ):
+        import boto3
+        self._model = model_name
+        self._client = boto3.client(
+            "bedrock-runtime",
+            region_name=aws_region,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            aws_session_token=aws_session_token or None,
+        )
+
+    def load_model(self):
+        return self._client
+
+    def generate(self, prompt: str, schema=None):
+        messages = [{"role": "user", "content": [{"text": prompt}]}]
+        kwargs: dict = {"modelId": self._model, "messages": messages}
+
+        if schema is not None:
+            kwargs["system"] = [{"text": (
+                "Responda APENAS com um objeto JSON válido seguindo exatamente este schema: "
+                f"{json.dumps(schema.model_json_schema())}. Sem texto adicional."
+            )}]
+            resp = self._client.converse(**kwargs)
+            raw = resp["output"]["message"]["content"][0]["text"].strip()
+            if raw.startswith("```"):
+                parts = raw.split("```")
+                raw = parts[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
+            return schema.model_validate_json(raw), 0
+
+        resp = self._client.converse(**kwargs)
+        text = resp["output"]["message"]["content"][0]["text"]
+        return text, 0
+
+    async def a_generate(self, prompt: str, schema=None):
+        return self.generate(prompt, schema)
+
+    def get_model_name(self) -> str:
+        return self._model
+
+
 def get_judge_from_provider(provider) -> Optional[CustomJudgeLLM]:
     """Cria judge a partir de um LLMProvider do banco."""
     if provider is None:
         return None
+    if provider.provider_type == "bedrock":
+        return BedrockJudgeLLM(
+            model_name=provider.model_name,
+            aws_access_key_id=provider.aws_access_key_id or "",
+            aws_secret_access_key=provider.aws_secret_access_key or "",
+            aws_region=provider.aws_region or "us-east-1",
+            aws_session_token=provider.aws_session_token,
+            aws_account_id=provider.aws_account_id,
+        )
     return CustomJudgeLLM(
         base_url=provider.base_url,
         api_key=provider.api_key,

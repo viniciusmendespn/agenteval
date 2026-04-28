@@ -32,9 +32,13 @@ def evolve(base: float, improvement: float, noise: float = 0.04) -> float:
 
 LOWER_IS_BETTER = {"hallucination", "toxicity", "bias", "non_advice", "role_violation"}
 
+def is_lower_better(metric_name: str) -> bool:
+    """Guardrail scores são lower-is-better: 0=ok, 1=violação."""
+    return metric_name in LOWER_IS_BETTER or metric_name.startswith(("guardrail_input_", "guardrail_output_"))
+
 def compute_passed(scores: dict, profile_dict: dict) -> bool:
     for k, v in scores.items():
-        if k in LOWER_IS_BETTER:
+        if is_lower_better(k):
             if v > profile_dict.get(f"{k}_threshold", 0.5):
                 return False
         elif k == "latency":
@@ -1016,7 +1020,7 @@ def seed_platconv(db):
             scores, reasons = gen_scores(quality, profile_dict, run_i, total_runs)
             passed = compute_passed(scores, profile_dict)
             for metric_name, score in scores.items():
-                all_scores_vals.append((1.0 - score) if metric_name in LOWER_IS_BETTER else score)
+                all_scores_vals.append((1.0 - score) if is_lower_better(metric_name) else score)
 
             turns_executed = None
             turn_outputs = None
@@ -1318,11 +1322,19 @@ def _create_eval(db, wid, ds_id, profile_id, profile_dict, records, date_str, ta
     all_scores_vals = []
     for rec in records:
         roll = random.random()
-        quality = "good" if roll > 0.15 else "mediocre" if roll > 0.05 else "bad"
+        # Distribuição de qualidade dirigida pelo target_score — evals com nota maior têm mais "good"
+        if target_score >= 0.90:
+            quality = "good" if roll > 0.08 else "mediocre" if roll > 0.02 else "bad"
+        elif target_score >= 0.85:
+            quality = "good" if roll > 0.15 else "mediocre" if roll > 0.05 else "bad"
+        elif target_score >= 0.80:
+            quality = "good" if roll > 0.22 else "mediocre" if roll > 0.08 else "bad"
+        else:
+            quality = "good" if roll > 0.35 else "mediocre" if roll > 0.15 else "bad"
         scores, reasons = gen_scores(quality, profile_dict, idx, total)
         passed = compute_passed(scores, profile_dict)
         for metric_name, score in scores.items():
-            all_scores_vals.append((1.0 - score) if metric_name in LOWER_IS_BETTER else score)
+            all_scores_vals.append((1.0 - score) if is_lower_better(metric_name) else score)
         db.add(DatasetResult(
             evaluation_id=ev.id,
             record_id=rec.id,
@@ -1441,7 +1453,7 @@ def seed_pitchmaker(db):
         db.add(run)
         db.flush()
 
-        quality_dist = [0.0, 0.25, 0.10, 0.15, 0.0][run_i]  # fração bad
+        quality_dist = [0.20, 0.15, 0.08, 0.03, 0.0][run_i]  # fração bad — melhora monotonicamente
         all_scores_vals = []
         for tc in tc_objs:
             roll = random.random()
@@ -1449,7 +1461,7 @@ def seed_pitchmaker(db):
             scores, reasons = gen_scores(quality, profile_dict, run_i, total_runs)
             passed = compute_passed(scores, profile_dict)
             for metric_name, score in scores.items():
-                all_scores_vals.append((1.0 - score) if metric_name in LOWER_IS_BETTER else score)
+                all_scores_vals.append((1.0 - score) if is_lower_better(metric_name) else score)
             db.add(TestResult(
                 run_id=run.id,
                 test_case_id=tc.id,
@@ -1605,7 +1617,7 @@ def seed_ab_evaluations(db, platconv_wid, ds1, ds1_records, profile_rigoroso, p_
         scores, reasons = gen_scores(quality, p_rigoroso, 0, 2)
         passed = compute_passed(scores, p_rigoroso)
         for metric_name, score in scores.items():
-            baseline_scores.append((1.0 - score) if metric_name in LOWER_IS_BETTER else score)
+            baseline_scores.append((1.0 - score) if is_lower_better(metric_name) else score)
         db.add(DatasetResult(
             evaluation_id=ev_baseline.id, record_id=rec.id,
             scores=scores, reasons=reasons, passed=passed,
@@ -1643,7 +1655,7 @@ def seed_ab_evaluations(db, platconv_wid, ds1, ds1_records, profile_rigoroso, p_
         scores, reasons = gen_scores(quality, p_rigoroso, 1, 2)
         passed = compute_passed(scores, p_rigoroso)
         for metric_name, score in scores.items():
-            optimized_scores.append((1.0 - score) if metric_name in LOWER_IS_BETTER else score)
+            optimized_scores.append((1.0 - score) if is_lower_better(metric_name) else score)
         db.add(DatasetResult(
             evaluation_id=ev_optimized.id, record_id=rec.id,
             scores=scores, reasons=reasons, passed=passed,

@@ -6,3 +6,4 @@ httpx
 deepeval
 python-dotenv
 python-multipart
+boto3

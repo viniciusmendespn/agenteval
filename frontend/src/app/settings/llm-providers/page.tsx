@@ -19,6 +19,80 @@ import { Breadcrumb } from "@/components/ui/Breadcrumb"
 
 type FormData = Omit<LLMProvider, "id" | "created_at">
 
+const inp = "w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
+const lbl = "block text-xs font-medium text-gray-600 mb-1"
+
+function isBedrock(pt: string) { return pt === "bedrock" }
+
+function ProviderTypeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select className={inp} value={value} onChange={e => onChange(e.target.value)}>
+      <option value="azure">Azure OpenAI</option>
+      <option value="openai">OpenAI</option>
+      <option value="custom">Customizado (compatível OpenAI)</option>
+      <option value="bedrock">AWS Bedrock</option>
+    </select>
+  )
+}
+
+function ProviderFields({ f, set }: { f: FormData; set: (fn: (prev: FormData) => FormData) => void }) {
+  const bedrock = isBedrock(f.provider_type)
+  return (
+    <>
+      {bedrock ? (
+        <>
+          <div>
+            <label className={lbl}>Região AWS *</label>
+            <input className={inp} value={f.aws_region} placeholder="us-east-1"
+              onChange={e => set(p => ({ ...p, aws_region: e.target.value }))} />
+          </div>
+          <div>
+            <label className={lbl}>Account ID</label>
+            <input className={inp} value={f.aws_account_id} placeholder="123456789012"
+              onChange={e => set(p => ({ ...p, aws_account_id: e.target.value }))} />
+          </div>
+          <div>
+            <label className={lbl}>Access Key ID *</label>
+            <input className={inp} value={f.aws_access_key_id} placeholder="AKIA..."
+              onChange={e => set(p => ({ ...p, aws_access_key_id: e.target.value }))} />
+          </div>
+          <div>
+            <label className={lbl}>Secret Access Key *</label>
+            <input className={inp} type="password" value={f.aws_secret_access_key} placeholder="••••••••"
+              onChange={e => set(p => ({ ...p, aws_secret_access_key: e.target.value }))} />
+          </div>
+          <div>
+            <label className={lbl}>Session Token <span className="text-gray-400">(opcional)</span></label>
+            <input className={inp} type="password" value={f.aws_session_token} placeholder="Deixe vazio para credenciais permanentes"
+              onChange={e => set(p => ({ ...p, aws_session_token: e.target.value }))} />
+          </div>
+        </>
+      ) : (
+        <>
+          <div>
+            <label className={lbl}>Base URL</label>
+            <input className={inp} value={f.base_url}
+              placeholder={f.provider_type === "openai" ? "Deixe vazio para padrão" : "https://seu-endpoint.openai.azure.com"}
+              onChange={e => set(p => ({ ...p, base_url: e.target.value }))} />
+          </div>
+          <div>
+            <label className={lbl}>API Key *</label>
+            <input className={inp} type="password" value={f.api_key} placeholder="sk-..."
+              onChange={e => set(p => ({ ...p, api_key: e.target.value }))} />
+          </div>
+          {f.provider_type === "azure" && (
+            <div>
+              <label className={lbl}>API Version</label>
+              <input className={inp} value={f.api_version} placeholder="2025-03-01-preview"
+                onChange={e => set(p => ({ ...p, api_version: e.target.value }))} />
+            </div>
+          )}
+        </>
+      )}
+    </>
+  )
+}
+
 const EMPTY: FormData = {
   name: "",
   provider_type: "azure",
@@ -26,6 +100,11 @@ const EMPTY: FormData = {
   api_key: "",
   model_name: "",
   api_version: "",
+  aws_account_id: "",
+  aws_access_key_id: "",
+  aws_secret_access_key: "",
+  aws_session_token: "",
+  aws_region: "",
 }
 
 export default function LLMProvidersPage() {
@@ -69,11 +148,7 @@ export default function LLMProvidersPage() {
     e.preventDefault()
     setSaving(true); setError(null)
     try {
-      await createLLMProvider({
-        ...form,
-        base_url: form.base_url || undefined,
-        api_version: form.api_version || undefined,
-      })
+      await createLLMProvider(buildPayload(form))
       setForm(EMPTY)
       setFormOpen(false)
       toast.success("Provedor adicionado")
@@ -84,17 +159,25 @@ export default function LLMProvidersPage() {
 
   function startEdit(p: LLMProvider) {
     setEditingId(p.id)
-    setEditForm({ name: p.name, provider_type: p.provider_type, base_url: p.base_url ?? "", api_key: p.api_key, model_name: p.model_name, api_version: p.api_version ?? "" })
+    setEditForm({
+      name: p.name,
+      provider_type: p.provider_type,
+      base_url: p.base_url ?? "",
+      api_key: p.api_key ?? "",
+      model_name: p.model_name,
+      api_version: p.api_version ?? "",
+      aws_account_id: p.aws_account_id ?? "",
+      aws_access_key_id: p.aws_access_key_id ?? "",
+      aws_secret_access_key: p.aws_secret_access_key ?? "",
+      aws_session_token: p.aws_session_token ?? "",
+      aws_region: p.aws_region ?? "",
+    })
   }
 
   async function handleSaveEdit(id: number) {
     setSaving(true)
     try {
-      await updateLLMProvider(id, {
-        ...editForm,
-        base_url: editForm.base_url || undefined,
-        api_version: editForm.api_version || undefined,
-      })
+      await updateLLMProvider(id, buildPayload(editForm))
       setEditingId(null)
       toast.success("Provedor atualizado")
       load()
@@ -129,8 +212,34 @@ export default function LLMProvidersPage() {
     }
   }
 
-  const inp = "w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
-  const lbl = "block text-xs font-medium text-gray-600 mb-1"
+  function buildPayload(f: FormData) {
+    if (isBedrock(f.provider_type)) {
+      return {
+        name: f.name,
+        provider_type: f.provider_type,
+        model_name: f.model_name,
+        aws_account_id: f.aws_account_id || undefined,
+        aws_access_key_id: f.aws_access_key_id || undefined,
+        aws_secret_access_key: f.aws_secret_access_key || undefined,
+        aws_session_token: f.aws_session_token || undefined,
+        aws_region: f.aws_region || undefined,
+      }
+    }
+    return {
+      name: f.name,
+      provider_type: f.provider_type,
+      base_url: f.base_url || undefined,
+      api_key: f.api_key || undefined,
+      model_name: f.model_name,
+      api_version: f.api_version || undefined,
+    }
+  }
+
+  function isCreateDisabled(f: FormData) {
+    if (!f.name || !f.model_name) return true
+    if (isBedrock(f.provider_type)) return !f.aws_access_key_id || !f.aws_secret_access_key || !f.aws_region
+    return !f.api_key
+  }
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -195,48 +304,28 @@ export default function LLMProvidersPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label className={lbl}>Nome *</label>
-              <input className={inp} value={form.name} placeholder="Ex: GPT-4o BRQ" required
+              <input className={inp} value={form.name} placeholder="Ex: Claude Bedrock" required
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div>
               <label className={lbl}>Tipo de provedor</label>
-              <select className={inp} value={form.provider_type}
-                onChange={e => setForm(f => ({ ...f, provider_type: e.target.value as any }))}>
-                <option value="azure">Azure OpenAI</option>
-                <option value="openai">OpenAI</option>
-                <option value="custom">Customizado (compatível OpenAI)</option>
-              </select>
+              <ProviderTypeSelect value={form.provider_type}
+                onChange={v => setForm(f => ({ ...f, provider_type: v as any }))} />
             </div>
             <div>
-              <label className={lbl}>Base URL</label>
-              <input className={inp} value={form.base_url}
-                placeholder={form.provider_type === "openai" ? "Deixe vazio para padrão" : "https://seu-endpoint.openai.azure.com"}
-                onChange={e => setForm(f => ({ ...f, base_url: e.target.value }))} />
+              <label className={lbl}>Model ID *</label>
+              <input className={inp} value={form.model_name}
+                placeholder={isBedrock(form.provider_type) ? "anthropic.claude-3-5-sonnet-20241022-v2:0" : "gpt-4o, gpt-5.2, etc."}
+                required onChange={e => setForm(f => ({ ...f, model_name: e.target.value }))} />
             </div>
-            <div>
-              <label className={lbl}>API Key *</label>
-              <input className={inp} type="password" value={form.api_key} placeholder="sk-..." required
-                onChange={e => setForm(f => ({ ...f, api_key: e.target.value }))} />
-            </div>
-            <div>
-              <label className={lbl}>Nome do modelo *</label>
-              <input className={inp} value={form.model_name} placeholder="gpt-4o, gpt-5.2, etc." required
-                onChange={e => setForm(f => ({ ...f, model_name: e.target.value }))} />
-            </div>
-            {form.provider_type === "azure" && (
-              <div>
-                <label className={lbl}>API Version</label>
-                <input className={inp} value={form.api_version} placeholder="2025-03-01-preview"
-                  onChange={e => setForm(f => ({ ...f, api_version: e.target.value }))} />
-              </div>
-            )}
+            <ProviderFields f={form} set={setForm} />
           </div>
           <div className="flex justify-end">
             <LoadingButton
               type="submit"
               isLoading={saving}
               loadingText="Adicionando…"
-              disabled={!form.name || !form.api_key || !form.model_name}
+              disabled={isCreateDisabled(form)}
             >
               Adicionar provedor
             </LoadingButton>
@@ -275,35 +364,16 @@ export default function LLMProvidersPage() {
                       </div>
                       <div>
                         <label className={lbl}>Tipo</label>
-                        <select className={inp} value={editForm.provider_type}
-                          onChange={e => setEditForm(f => ({ ...f, provider_type: e.target.value as any }))}>
-                          <option value="azure">Azure OpenAI</option>
-                          <option value="openai">OpenAI</option>
-                          <option value="custom">Customizado</option>
-                        </select>
+                        <ProviderTypeSelect value={editForm.provider_type}
+                          onChange={v => setEditForm(f => ({ ...f, provider_type: v as any }))} />
                       </div>
                       <div>
-                        <label className={lbl}>Base URL</label>
-                        <input className={inp} value={editForm.base_url}
-                          onChange={e => setEditForm(f => ({ ...f, base_url: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className={lbl}>API Key</label>
-                        <input className={inp} type="password" value={editForm.api_key}
-                          onChange={e => setEditForm(f => ({ ...f, api_key: e.target.value }))} />
-                      </div>
-                      <div>
-                        <label className={lbl}>Modelo *</label>
+                        <label className={lbl}>Model ID *</label>
                         <input className={inp} value={editForm.model_name}
+                          placeholder={isBedrock(editForm.provider_type) ? "anthropic.claude-3-5-sonnet-20241022-v2:0" : "gpt-4o"}
                           onChange={e => setEditForm(f => ({ ...f, model_name: e.target.value }))} />
                       </div>
-                      {editForm.provider_type === "azure" && (
-                        <div>
-                          <label className={lbl}>API Version</label>
-                          <input className={inp} value={editForm.api_version}
-                            onChange={e => setEditForm(f => ({ ...f, api_version: e.target.value }))} />
-                        </div>
-                      )}
+                      <ProviderFields f={editForm} set={setEditForm} />
                     </div>
                     <div className="flex gap-2 justify-end">
                       <button onClick={() => setEditingId(null)} className="flame-button-secondary flex items-center gap-1.5">
@@ -325,7 +395,8 @@ export default function LLMProvidersPage() {
                         <p className="font-semibold text-gray-900">{p.name}</p>
                         <p className="text-xs text-gray-500 truncate">
                           {p.model_name} · <span className="flame-chip">{p.provider_type}</span>
-                          {p.base_url && <> · {p.base_url}</>}
+                          {p.provider_type === "bedrock" && p.aws_region && <> · {p.aws_region}</>}
+                          {p.provider_type !== "bedrock" && p.base_url && <> · {p.base_url}</>}
                         </p>
                         {testResults[p.id] && (
                           <p className={`text-xs mt-0.5 truncate ${testResults[p.id].ok ? "text-green-600" : "text-red-600"}`}>

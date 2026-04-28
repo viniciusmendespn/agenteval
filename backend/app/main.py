@@ -258,6 +258,12 @@ def _migrate():
         if "chat_llm_provider_id" not in ws_cols:
             conn.execute(text("ALTER TABLE workspaces ADD COLUMN chat_llm_provider_id INTEGER REFERENCES llm_providers(id)"))
 
+        # llm_providers: suporte a AWS Bedrock
+        lp_cols = {c["name"] for c in insp.get_columns("llm_providers")}
+        for col in ["aws_account_id", "aws_access_key_id", "aws_secret_access_key", "aws_session_token", "aws_region"]:
+            if col not in lp_cols:
+                conn.execute(text(f"ALTER TABLE llm_providers ADD COLUMN {col} TEXT"))
+
         conn.commit()
 
 _migrate()

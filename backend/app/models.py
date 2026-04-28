@@ -53,11 +53,16 @@ class LLMProvider(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    provider_type = Column(String, default="azure")  # azure | openai | custom
+    provider_type = Column(String, default="azure")  # azure | openai | custom | bedrock
     base_url = Column(String, nullable=True)
-    api_key = Column(String, nullable=False)
+    api_key = Column(String, nullable=True)
     model_name = Column(String, nullable=False)
     api_version = Column(String, nullable=True)
+    aws_account_id = Column(String, nullable=True)
+    aws_access_key_id = Column(String, nullable=True)
+    aws_secret_access_key = Column(String, nullable=True)
+    aws_session_token = Column(String, nullable=True)
+    aws_region = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
