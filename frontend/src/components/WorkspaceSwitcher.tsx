@@ -40,7 +40,7 @@ export default function WorkspaceSwitcher() {
     setActiveWorkspaceId(id)
     setActiveId(id)
     window.sessionStorage.setItem("agenteval.workspaceConfirmed", id)
-    window.location.reload()
+    window.location.href = "/"
   }
 
   if (loading) {
