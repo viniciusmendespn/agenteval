@@ -10,7 +10,14 @@ from ..models import (
 )
 from ..services.agent_caller import call_agent
 from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
-from ..services.judge_llm import resolve_judge
+from ..services.judge_llm import resolve_judge, resolve_system_judge
+
+
+def _resolve_judge(db, profile, workspace_id):
+    """Prioridade: provider do perfil → system_llm_provider_id do workspace → primeiro disponível."""
+    if getattr(profile, "llm_provider_id", None):
+        return resolve_judge(db, profile.llm_provider_id)
+    return resolve_system_judge(db, workspace_id)
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +47,7 @@ def execute_run_core(run_id: int):
         tc_map = {tc.id: tc for tc in test_cases}
         ordered = [tc_map[i] for i in run.test_case_ids if i in tc_map]
 
-        judge_override = resolve_judge(db, getattr(profile, "llm_provider_id", None))
+        judge_override = _resolve_judge(db, profile, run.workspace_id)
         guardrails = _load_guardrails(db, profile)
 
         run.agent_metadata_snapshot = _agent_metadata_snapshot(agent)
@@ -282,7 +289,7 @@ def execute_evaluation_core(eval_id: int):
         )
 
         dataset_system_prompt = getattr(dataset, "system_prompt", None)
-        judge_override = resolve_judge(db, getattr(profile, "llm_provider_id", None))
+        judge_override = _resolve_judge(db, profile, ev.workspace_id)
         guardrails = _load_guardrails(db, profile)
 
         logger.info("Dataset evaluation %d started: %d records", eval_id, len(records))
