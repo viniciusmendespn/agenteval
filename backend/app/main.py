@@ -253,6 +253,11 @@ def _migrate():
             )
         """))
 
+        # Workspace: provedor LLM do chat assistente
+        ws_cols = {c["name"] for c in insp.get_columns("workspaces")}
+        if "chat_llm_provider_id" not in ws_cols:
+            conn.execute(text("ALTER TABLE workspaces ADD COLUMN chat_llm_provider_id INTEGER REFERENCES llm_providers(id)"))
+
         conn.commit()
 
 _migrate()

@@ -55,6 +55,18 @@ def create_agent(
     require_writer(workspace)
     agent = Agent(**data.model_dump(), workspace_id=workspace.workspace_id)
     db.add(agent)
+    db.flush()
+
+    if agent.system_prompt:
+        db.add(AgentPromptVersion(
+            agent_id=agent.id,
+            workspace_id=workspace.workspace_id,
+            system_prompt=agent.system_prompt,
+            version_num=1,
+            status="active",
+            created_at=datetime.utcnow(),
+        ))
+
     db.commit()
     db.refresh(agent)
     return agent

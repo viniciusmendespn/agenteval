@@ -3,14 +3,13 @@ Router /chat — assistente conversacional com function calling (Fusion API).
 Permite criar agentes, perfis, casos de teste, iniciar runs e consultar o sistema.
 """
 import json
-import os
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from openai import AzureOpenAI
+from openai import AzureOpenAI, OpenAI
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Agent, EvaluationProfile, TestCase, TestRun
+from ..models import Agent, EvaluationProfile, LLMProvider, TestCase, TestRun
 from ..queue import get_task_queue
 from ..workspace import WorkspaceContext, get_current_workspace
 
@@ -18,7 +17,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 # ── System prompt ────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Você é um assistente especialista em Quality Assurance para agentes de IA no Santander AgentEval.
+SYSTEM_PROMPT_BASE = """Você é um assistente especialista em Quality Assurance para agentes de IA no Santander AgentEval.
 Sua missão principal é ajudar o usuário a criar casos de teste profissionais e abrangentes.
 
 Regras gerais:
@@ -27,14 +26,18 @@ Regras gerais:
 - Ao mencionar páginas do sistema, use SEMPRE links markdown clicáveis. Exemplos: [Ver execução #20](/runs/20), [Agentes](/agents). Nunca escreva o caminho como texto simples.
 - hallucination/toxicity/bias: score 0 = ótimo (lower-is-better).
 
+AGENTES CADASTRADOS (use estes dados diretamente — NÃO chame list_agents):
+{agents_list}
+
 REGRA CRÍTICA — Sugestão de casos de teste:
 NUNCA gere casos de teste manualmente em texto livre. SEMPRE chame a tool `suggest_test_cases` — ela usa IA especializada para gerar os casos com a estrutura correta (título, tipo, expected_output, context, tags, turns).
 
 Fluxo OBRIGATÓRIO quando o usuário pedir sugestões ou quiser testar um agente:
-1. PRIMEIRO chame `suggest_test_cases` com o agent_id correto.
+1. Se o usuário mandar uma mensagem no formato "Agente selecionado: <nome> (ID: <id>)": chame IMEDIATAMENTE `suggest_test_cases` com esse agent_id, sem perguntar mais nada.
+2. Se o agente já estiver identificado de outra forma: chame `suggest_test_cases` com o agent_id correto.
    - Se o resultado retornar `needs_context: true`, então pergunte ao usuário pelo contexto/instruções do agente.
    - Se o usuário fornecer contexto, chame `suggest_test_cases` novamente com `agent_context` preenchido.
-2. Após a tool retornar os cenários com sucesso, inclua NO SEU RESPONSE o bloco JSON abaixo EXATAMENTE neste formato (sem alterar os dados retornados):
+3. Após a tool retornar os cenários com sucesso, inclua NO SEU RESPONSE o bloco JSON abaixo EXATAMENTE neste formato (sem alterar os dados retornados):
 
 Aqui estão X sugestões de casos de teste para **[Nome do Agente]**:
 
@@ -44,12 +47,22 @@ Aqui estão X sugestões de casos de teste para **[Nome do Agente]**:
 
 Selecione os casos que deseja criar.
 
-3. NÃO crie casos automaticamente. Use `create_test_case` SOMENTE quando o usuário pedir explicitamente.
-4. Para outras ações (listar agentes, criar perfis, iniciar runs), ajude normalmente.
+4. NÃO crie casos automaticamente. Use `create_test_case` SOMENTE quando o usuário pedir explicitamente.
+5. Para outras ações (criar perfis, iniciar runs, etc.), ajude normalmente.
 
 Defaults ao criar agente: connection_type=http, request_body={"message":"{{message}}"}, output_field=response.
 Defaults ao criar perfil: relevancy ON (threshold 0.7), demais métricas OFF.
 """
+
+
+def _build_system_prompt(db: Session, workspace_id: int) -> str:
+    agents = db.query(Agent).filter(Agent.workspace_id == workspace_id).all()
+    if agents:
+        lines = [f"- ID {a.id}: {a.name}" for a in agents]
+        agents_list = "\n".join(lines)
+    else:
+        agents_list = "(nenhum agente cadastrado ainda)"
+    return SYSTEM_PROMPT_BASE.replace("{agents_list}", agents_list)
 
 # ── Definição das tools ───────────────────────────────────────────────────────
 
@@ -215,7 +228,7 @@ TOOLS = [
                 "properties": {
                     "agent_id": {"type": "integer", "description": "ID do agente"},
                     "agent_context": {"type": "string", "description": "Contexto ou instruções do agente (opcional se ele tiver system prompt cadastrado)."},
-                    "n_scenarios": {"type": "integer", "description": "Número de sugestões a gerar (padrão: 6)."},
+                    "n_scenarios": {"type": "integer", "description": "Número de sugestões a gerar (padrão: 5)."},
                 },
                 "required": ["agent_id"],
             },
@@ -225,7 +238,7 @@ TOOLS = [
 
 # ── Implementação das tools ───────────────────────────────────────────────────
 
-def _run_tool(name: str, args: dict, db: Session, workspace_id: int) -> str:
+def _run_tool(name: str, args: dict, db: Session, workspace_id: int, client, model: str) -> str:
     try:
         if name == "get_overview":
             return _tool_get_overview(db, workspace_id)
@@ -248,7 +261,7 @@ def _run_tool(name: str, args: dict, db: Session, workspace_id: int) -> str:
         if name == "get_agent_timeline":
             return _tool_get_agent_timeline(args, db, workspace_id)
         if name == "suggest_test_cases":
-            return _tool_suggest_test_cases(args, db, workspace_id)
+            return _tool_suggest_test_cases(args, db, workspace_id, client, model)
         return f"Tool desconhecida: {name}"
     except Exception as e:
         return f"Erro ao executar {name}: {str(e)}"
@@ -491,11 +504,9 @@ def _tool_get_agent_timeline(args: dict, db: Session, workspace_id: int) -> str:
     return json.dumps({"agente": agent.name, "evolucao": points}, ensure_ascii=False)
 
 
-def _generate_test_scenarios(agent_name: str, context: str, n: int) -> list:
+def _generate_test_scenarios(agent_name: str, context: str, n: int, client, model: str) -> list:
     """Chama o LLM para gerar n casos de teste ricos para o agente."""
     import re as _re
-    client = _get_llm_client()
-    model = os.getenv("JUDGE_MODEL", "gpt-4")
     prompt = (
         f'Crie {n} casos de teste para o agente "{agent_name}".\n\n'
         f"Contexto/instruções do agente:\n{context}\n\n"
@@ -507,7 +518,7 @@ def _generate_test_scenarios(agent_name: str, context: str, n: int) -> list:
         '- "context": array de 2-3 strings com fatos do contexto relevantes para avaliar este caso\n'
         '- "tags": string com tags separadas por vírgula\n'
         '- "turns": null para single-turn, ou array de 2-4 objetos {"input": string, "expected_output": string} para multi-turn\n\n'
-        f"Distribua os tipos: 2 happy_path, 2 edge_case, 1 scope_escape, 1 ambiguity (ajuste proporcionalmente para {n} casos).\n"
+        f"Distribua os tipos equilibradamente entre happy_path, edge_case, scope_escape e ambiguity para {n} casos.\n"
         "expected_output deve ser uma resposta realista e detalhada que o agente ideal daria.\n"
         "Para scope_escape, o usuário tenta fazer o agente sair do seu papel/escopo.\n"
         "Retorne APENAS o JSON válido, sem explicações ou markdown."
@@ -527,7 +538,7 @@ def _generate_test_scenarios(agent_name: str, context: str, n: int) -> list:
     return []
 
 
-def _tool_suggest_test_cases(args: dict, db: Session, workspace_id: int) -> str:
+def _tool_suggest_test_cases(args: dict, db: Session, workspace_id: int, client, model: str) -> str:
     agent = db.query(Agent).filter(Agent.id == args["agent_id"], Agent.workspace_id == workspace_id).first()
     if not agent:
         return json.dumps({"error": f"Agente ID {args['agent_id']} não encontrado."}, ensure_ascii=False)
@@ -548,8 +559,8 @@ def _tool_suggest_test_cases(args: dict, db: Session, workspace_id: int) -> str:
             "message": f"O agente '{agent.name}' não tem system prompt cadastrado. Peça ao usuário o contexto ou instruções do agente antes de gerar sugestões.",
         }, ensure_ascii=False)
 
-    n = args.get("n_scenarios", 6)
-    scenarios = _generate_test_scenarios(agent.name, context, n)
+    n = args.get("n_scenarios", 5)
+    scenarios = _generate_test_scenarios(agent.name, context, n, client, model)
     if not scenarios:
         return json.dumps({"error": "Não foi possível gerar sugestões. Verifique se o LLM judge está configurado."}, ensure_ascii=False)
 
@@ -576,12 +587,53 @@ class ChatResponse(BaseModel):
     tokens: int = 0
 
 
-def _get_llm_client():
-    return AzureOpenAI(
-        azure_endpoint=os.getenv("JUDGE_BASE_URL"),
-        api_key=os.getenv("JUDGE_API_KEY", ""),
-        api_version=os.getenv("JUDGE_API_VERSION", "2025-03-01-preview"),
-    )
+def _resolve_chat_client(db: Session, workspace: WorkspaceContext):
+    """Retorna (client, model_name) usando o provedor LLM configurado para o workspace."""
+    provider_id = workspace.workspace.chat_llm_provider_id
+    if provider_id:
+        provider = db.get(LLMProvider, provider_id)
+    else:
+        provider = db.query(LLMProvider).first()
+
+    if provider is None:
+        raise HTTPException(
+            503,
+            "Nenhum provedor LLM configurado. Acesse Configurações → Provedores LLM para adicionar um.",
+        )
+
+    if provider.provider_type == "openai":
+        client = OpenAI(api_key=provider.api_key, base_url=provider.base_url or None)
+    else:
+        client = AzureOpenAI(
+            azure_endpoint=provider.base_url,
+            api_key=provider.api_key,
+            api_version=provider.api_version or "2025-03-01-preview",
+        )
+    return client, provider.model_name
+
+
+_KEYWORDS_TEST_CASES = [
+    "casos de teste", "caso de teste", "gerar casos", "criar casos",
+    "sugerir casos", "sugestão de casos", "sugestões de casos",
+    "quero testar", "criar testes", "gerar testes", "teste para",
+    "testes para", "testar agente", "me ajude a testar",
+]
+
+
+def _should_show_agent_selector(messages: list[ChatMessage], agents: list) -> bool:
+    """Returns True if user is asking about test cases without specifying an agent."""
+    if not messages or messages[-1].role != "user":
+        return False
+    text = messages[-1].content.lower()
+    if not any(kw in text for kw in _KEYWORDS_TEST_CASES):
+        return False
+    # If user already named an agent or passed an agent_id, let LLM handle it
+    for agent in agents:
+        if agent.name.lower() in text:
+            return False
+    if "id:" in text or "(id:" in text:
+        return False
+    return True
 
 
 @router.post("/", response_model=ChatResponse)
@@ -590,10 +642,22 @@ def chat(
     db: Session = Depends(get_db),
     workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    client = _get_llm_client()
-    model = os.getenv("JUDGE_MODEL", "gpt-4")
+    agents = db.query(Agent).filter(Agent.workspace_id == workspace.workspace_id).all()
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    # Fast path: intercept test-case requests and return agent selector immediately (no LLM call)
+    if _should_show_agent_selector(body.messages, agents):
+        if not agents:
+            return ChatResponse(reply="Nenhum agente cadastrado ainda. [Crie um agente](/agents) primeiro.", tokens=0)
+        selector = json.dumps(
+            {"__type": "agent_selector", "agents": [{"id": a.id, "name": a.name} for a in agents]},
+            ensure_ascii=False,
+        )
+        return ChatResponse(reply=f"```json\n{selector}\n```", tokens=0)
+
+    client, model = _resolve_chat_client(db, workspace)
+
+    system_prompt = _build_system_prompt(db, workspace.workspace_id)
+    messages = [{"role": "system", "content": system_prompt}]
     messages += [{"role": m.role, "content": m.content} for m in body.messages]
 
     total_tokens = 0
@@ -617,7 +681,7 @@ def chat(
             # Executa cada tool e devolve os resultados
             for tc in choice.message.tool_calls:
                 args = json.loads(tc.function.arguments)
-                result = _run_tool(tc.function.name, args, db, workspace.workspace_id)
+                result = _run_tool(tc.function.name, args, db, workspace.workspace_id, client, model)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc.id,

@@ -29,6 +29,10 @@ type SuggestionsBlock = {
   cases: TestCaseSuggestion[]
 }
 
+type AgentSelectorBlock = {
+  agents: { id: number; name: string }[]
+}
+
 const TYPE_LABELS: Record<string, string> = {
   happy_path: "Fluxo feliz",
   edge_case: "Caso extremo",
@@ -45,24 +49,52 @@ const TYPE_COLORS: Record<string, string> = {
   error: "bg-gray-50 text-gray-600 border-gray-200",
 }
 
-function parseSuggestions(content: string): { before: string; block: SuggestionsBlock | null; after: string } {
+type ParsedContent =
+  | { type: "suggestions"; before: string; block: SuggestionsBlock; after: string }
+  | { type: "agent_selector"; block: AgentSelectorBlock }
+  | { type: "text"; content: string }
+
+function parseContent(content: string): ParsedContent {
   const match = content.match(/```json\s*([\s\S]*?)\s*```/)
-  if (!match) return { before: content, block: null, after: "" }
+  if (!match) return { type: "text", content }
   try {
     const parsed = JSON.parse(match[1])
+    if (parsed.__type === "agent_selector" && Array.isArray(parsed.agents)) {
+      return { type: "agent_selector", block: { agents: parsed.agents } }
+    }
     if (parsed.__type === "test_case_suggestions" && Array.isArray(parsed.cases)) {
       const idx = content.indexOf("```json")
       const end = content.indexOf("```", idx + 7) + 3
       return {
+        type: "suggestions",
         before: content.slice(0, idx).trim(),
         block: { agent_id: parsed.agent_id, cases: parsed.cases },
         after: content.slice(end).trim(),
       }
     }
   } catch {
-    // not a suggestions block
+    // not a special block
   }
-  return { before: content, block: null, after: "" }
+  return { type: "text", content }
+}
+
+function AgentSelectorCards({ block, onSelect }: { block: AgentSelectorBlock; onSelect: (agent: { id: number; name: string }) => void }) {
+  return (
+    <div className="mt-1 space-y-1.5">
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">
+        Selecione o agente
+      </p>
+      {block.agents.map(agent => (
+        <button
+          key={agent.id}
+          onClick={() => onSelect(agent)}
+          className="w-full text-left rounded-lg border border-gray-200 bg-white hover:border-[var(--santander-red)] hover:bg-red-50/30 px-3 py-2 text-sm font-medium text-gray-800 transition-colors"
+        >
+          {agent.name}
+        </button>
+      ))}
+    </div>
+  )
 }
 
 function SuggestionCards({ block }: { block: SuggestionsBlock }) {
@@ -224,7 +256,7 @@ export default function FloatingChat() {
     {
       role: "assistant",
       content:
-        "Olá! Sou seu assistente de QA. Posso sugerir casos de teste profissionais para seus agentes.\n\nMe diga qual agente você quer testar, ou peça para eu listar os agentes disponíveis.",
+        "Olá! Sou seu assistente de QA. Posso sugerir casos de teste para seus agentes.\n\nDiga algo como **\"gerar casos de teste\"** e eu listo os agentes disponíveis para você escolher.",
       timestamp: new Date(),
     },
   ])
@@ -320,43 +352,63 @@ export default function FloatingChat() {
     }
   }
 
-  function renderAssistantMessage(content: string) {
-    const { before, block, after } = parseSuggestions(content)
+  function handleAgentSelect(agent: { id: number; name: string }) {
+    const text = `Agente selecionado: ${agent.name} (ID: ${agent.id})`
+    setInput("")
+    const userMsg: Message = { role: "user", content: text, timestamp: new Date() }
+    const newMessages: Message[] = [...messages, userMsg]
+    setMessages(newMessages)
+    setLoading(true)
+    startLoadingSteps()
+    fetch(`${API}/chat/`, {
+      method: "POST",
+      headers: workspaceHeaders(),
+      body: JSON.stringify({ messages: newMessages.map(m => ({ role: m.role, content: m.content })) }),
+    })
+      .then(res => res.ok ? res.json() : res.text().then(t => { throw new Error(t) }))
+      .then(data => setMessages(prev => [...prev, { role: "assistant", content: data.reply, timestamp: new Date(), tokens: data.tokens ?? undefined }]))
+      .catch(err => setMessages(prev => [...prev, { role: "assistant", content: `Erro: ${err instanceof Error ? err.message : String(err)}`, timestamp: new Date() }]))
+      .finally(() => { stopLoadingSteps(); setLoading(false) })
+  }
+
+  function renderMarkdown(text: string) {
     return (
-      <>
-        {before && (
-          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-1 prose-code:text-xs">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                a: ({ href, children }) => (
-                  <a
-                    href={href}
-                    className="text-[var(--flame-teal)] underline underline-offset-2 hover:text-[var(--flame-teal-dark)] font-medium"
-                    {...(href?.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-                  >
-                    {children}
-                  </a>
-                ),
-              }}
-            >
-              {before}
-            </ReactMarkdown>
-          </div>
-        )}
-        {block && <SuggestionCards block={block} />}
-        {after && (
-          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 mt-2">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{after}</ReactMarkdown>
-          </div>
-        )}
-        {!before && !block && !after && (
-          <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-1 prose-code:text-xs">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-          </div>
-        )}
-      </>
+      <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-1 prose-code:text-xs">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: ({ href, children }) => (
+              <a
+                href={href}
+                className="text-[var(--flame-teal)] underline underline-offset-2 hover:text-[var(--flame-teal-dark)] font-medium"
+                {...(href?.startsWith("http") ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+              >
+                {children}
+              </a>
+            ),
+          }}
+        >
+          {text}
+        </ReactMarkdown>
+      </div>
     )
+  }
+
+  function renderAssistantMessage(content: string) {
+    const parsed = parseContent(content)
+    if (parsed.type === "agent_selector") {
+      return <AgentSelectorCards block={parsed.block} onSelect={handleAgentSelect} />
+    }
+    if (parsed.type === "suggestions") {
+      return (
+        <>
+          {parsed.before && renderMarkdown(parsed.before)}
+          <SuggestionCards block={parsed.block} />
+          {parsed.after && <div className="mt-2">{renderMarkdown(parsed.after)}</div>}
+        </>
+      )
+    }
+    return renderMarkdown(content)
   }
 
   return (

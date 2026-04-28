@@ -1,13 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Bot, Plus, Pencil, Trash2, Check, X, Zap, Loader2, ChevronDown } from "lucide-react"
+import { Bot, Plus, Pencil, Trash2, Check, X, Zap, Loader2, ChevronDown, MessageSquare } from "lucide-react"
 import {
   getLLMProviders,
   createLLMProvider,
   updateLLMProvider,
   deleteLLMProvider,
   testLLMProvider,
+  getWorkspaceSettings,
+  updateWorkspaceSettings,
   type LLMProvider,
 } from "@/lib/api"
 import { toast } from "sonner"
@@ -37,14 +39,31 @@ export default function LLMProvidersPage() {
   const [testingId, setTestingId] = useState<number | null>(null)
   const [testResults, setTestResults] = useState<Record<number, { ok: boolean; msg: string }>>({})
   const [formOpen, setFormOpen] = useState(false)
-
+  const [chatProviderId, setChatProviderId] = useState<number | null>(null)
+  const [savingChatProvider, setSavingChatProvider] = useState(false)
 
   function load() {
     setLoading(true)
     getLLMProviders().then(setProviders).catch(() => {}).finally(() => setLoading(false))
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    getWorkspaceSettings().then(s => setChatProviderId(s.chat_llm_provider_id)).catch(() => {})
+  }, [])
+
+  async function handleSaveChatProvider(id: number | null) {
+    setSavingChatProvider(true)
+    try {
+      await updateWorkspaceSettings({ chat_llm_provider_id: id })
+      setChatProviderId(id)
+      toast.success("Provedor do assistente atualizado")
+    } catch {
+      toast.error("Erro ao salvar")
+    } finally {
+      setSavingChatProvider(false)
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
@@ -116,13 +135,45 @@ export default function LLMProvidersPage() {
   return (
     <div className="max-w-5xl space-y-6">
       <Breadcrumb items={[{ label: "Configurações", href: "/settings" }, { label: "Provedores LLM" }]} />
-      <p className="text-sm text-gray-500">Configure LLMs alternativos para usar como juiz nas avaliações. O provedor padrão vem das variáveis de ambiente.</p>
+      <p className="text-sm text-gray-500">Configure LLMs alternativos para usar como juiz nas avaliações e no assistente de chat.</p>
 
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
+
+      {/* Assistente de chat */}
+      <section className="flame-panel px-5 py-4">
+        <div className="flex items-start gap-3">
+          <div className="flame-icon-shell h-10 w-10 shrink-0 mt-0.5">
+            <MessageSquare className="h-5 w-5 text-red-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-gray-900">Assistente de chat</h2>
+            <p className="text-sm text-gray-500 mt-0.5 mb-3">Selecione qual provedor LLM alimenta o chat flutuante da plataforma.</p>
+            <div className="flex items-center gap-3">
+              <select
+                className="flex-1 max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
+                value={chatProviderId ?? ""}
+                onChange={e => {
+                  const val = e.target.value === "" ? null : Number(e.target.value)
+                  handleSaveChatProvider(val)
+                }}
+                disabled={savingChatProvider || loading}
+              >
+                <option value="">Primeiro disponível (automático)</option>
+                {providers.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {p.model_name} ({p.provider_type})
+                  </option>
+                ))}
+              </select>
+              {savingChatProvider && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Formulário de criação */}
       <section className="flame-panel">

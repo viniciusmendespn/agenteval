@@ -180,7 +180,7 @@ export default function WorkspaceSettingsPage() {
                     >
                       {active ? "Ativo" : "Ativar"}
                     </button>
-                    {workspace.role === "owner" && (
+                    {workspace.role === "owner" && !active && (
                       <DeleteButton
                         id={workspace.id}
                         path="/workspaces"
