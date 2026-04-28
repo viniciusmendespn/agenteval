@@ -7,7 +7,7 @@ from ..models import (
     Dataset, DatasetResult, DatasetRecord,
     EvaluationProfile, Evaluation,
 )
-from ..services.evaluator import LOWER_IS_BETTER
+from ..services.evaluator import LOWER_IS_BETTER, GUARDRAIL_METRIC_PREFIX
 from ..workspace import WorkspaceContext, get_current_workspace
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -129,7 +129,7 @@ def get_run_breakdown(
     metric_breakdown = {}
     for metric_name, metric_scores in metric_data.items():
         avg = sum(metric_scores) / len(metric_scores) if metric_scores else 0
-        if metric_name in LOWER_IS_BETTER:
+        if metric_name in LOWER_IS_BETTER or metric_name.startswith(GUARDRAIL_METRIC_PREFIX):
             passed_count = sum(1 for s in metric_scores if s <= 0.5)
         else:
             passed_count = sum(1 for s in metric_scores if s >= 0.5)
@@ -281,7 +281,7 @@ def _build_timeline_points(evals: list, db: Session) -> list[dict]:
         metrics = {}
         for metric_name, scores_list in metric_avgs.items():
             raw_avg = sum(scores_list) / len(scores_list)
-            if metric_name in LOWER_IS_BETTER:
+            if metric_name in LOWER_IS_BETTER or metric_name.startswith(GUARDRAIL_METRIC_PREFIX):
                 metrics[metric_name] = round(1.0 - raw_avg, 4)
             else:
                 metrics[metric_name] = round(raw_avg, 4)

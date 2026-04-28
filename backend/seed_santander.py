@@ -195,20 +195,23 @@ def gen_scores(quality: str, profile_dict: dict, run_idx: int, total_runs: int) 
         )
 
     # Guardrails (input/output) -- lower-is-better: 0=ok, 1=violou
+    # Scores melhoram ao longo dos runs (improvement reduz a taxa de violação)
     for gkey, mode in profile_dict.get("guardrail_keys", []):
-        base_pass = {"good": 0.05, "mediocre": 0.25, "bad": 0.70}[quality]
-        s = clamp(base_pass + random.gauss(0, 0.05))
+        base_pass = {"good": 0.05, "mediocre": 0.28, "bad": 0.72}[quality]
+        s = clamp(base_pass - improvement * 0.25 + random.gauss(0, 0.03))
         if mode in ("input", "both"):
             scores[f"guardrail_input_{gkey}"] = s
             reasons[f"guardrail_input_{gkey}"] = (
-                f"Input não violou o guardrail '{gkey}'." if s < 0.5
-                else f"Input pode ter violado o guardrail '{gkey}'."
+                f"Input não violou o guardrail '{gkey}'." if s < 0.3
+                else f"Input pode ter violado o guardrail '{gkey}'." if s < 0.6
+                else f"Input violou o guardrail '{gkey}'."
             )
         if mode in ("output", "both"):
             scores[f"guardrail_output_{gkey}"] = s
             reasons[f"guardrail_output_{gkey}"] = (
-                f"Output não violou o guardrail '{gkey}'." if s < 0.5
-                else f"Output pode ter violado o guardrail '{gkey}'."
+                f"Output não violou o guardrail '{gkey}'." if s < 0.3
+                else f"Output pode ter violado o guardrail '{gkey}'." if s < 0.6
+                else f"Output violou o guardrail '{gkey}'."
             )
 
     return scores, reasons
