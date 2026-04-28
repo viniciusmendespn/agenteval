@@ -295,6 +295,7 @@ class Workspace(Base):
     name = Column(String, nullable=False)
     slug = Column(String, unique=True, nullable=False, index=True)
     chat_llm_provider_id = Column(Integer, ForeignKey("llm_providers.id"), nullable=True)
+    system_llm_provider_id = Column(Integer, ForeignKey("llm_providers.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

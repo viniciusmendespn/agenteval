@@ -340,7 +340,10 @@ export const createWorkspace = (data: { name: string; slug?: string }) =>
 export const deleteWorkspace = (id: number) =>
   request<{ ok: boolean }>(`/workspaces/${id}`, { method: "DELETE" })
 
-export type WorkspaceSettings = { chat_llm_provider_id: number | null }
+export type WorkspaceSettings = {
+  chat_llm_provider_id: number | null
+  system_llm_provider_id: number | null
+}
 export const getWorkspaceSettings = () => request<WorkspaceSettings>("/workspaces/settings")
 export const updateWorkspaceSettings = (data: WorkspaceSettings) =>
   request<WorkspaceSettings>("/workspaces/settings", { method: "PATCH", body: JSON.stringify(data) })

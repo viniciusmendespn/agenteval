@@ -1,30 +1,22 @@
 import json
-import os
-from openai import AzureOpenAI
 
 
-def suggest_mapping(sample: list[dict], all_paths: list[str]) -> dict:
+def suggest_mapping(sample: list[dict], all_paths: list[str], judge=None) -> dict:
     """
-    Usa o LLM judge para sugerir qual campo é input, output e contexto.
+    Usa o LLM configurado para sugerir qual campo é input, output e contexto.
     Retorna dict com: input_path, output_path, context_paths, reasoning.
     """
-    base_url = os.getenv("JUDGE_BASE_URL")
-    if not base_url:
-        return {
-            "input_path": None,
-            "output_path": None,
-            "context_paths": [],
-            "session_id_path": None,
-            "order_path": None,
-            "reasoning": "LLM judge não configurado — faça o mapeamento manualmente.",
-        }
+    _empty = {
+        "input_path": None,
+        "output_path": None,
+        "context_paths": [],
+        "session_id_path": None,
+        "order_path": None,
+        "reasoning": "LLM não configurado — faça o mapeamento manualmente.",
+    }
 
-    client = AzureOpenAI(
-        azure_endpoint=base_url,
-        api_key=os.getenv("JUDGE_API_KEY", ""),
-        api_version=os.getenv("JUDGE_API_VERSION", "2024-02-01"),
-    )
-    model = os.getenv("JUDGE_MODEL", "gpt-4")
+    if judge is None:
+        return _empty
 
     paths_str = "\n".join(f"  - {p}" for p in all_paths)
     sample_str = json.dumps(sample[:3], ensure_ascii=False, indent=2)
@@ -57,14 +49,11 @@ Responda APENAS com JSON válido, sem markdown, no formato exato:
 Use EXATAMENTE os caminhos da lista fornecida. Se não encontrar um campo, use null."""
 
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-        )
-        content = response.choices[0].message.content.strip()
+        content, _ = judge.generate(prompt)
+        if not isinstance(content, str):
+            content = str(content)
+        content = content.strip()
 
-        # Remove blocos markdown se o modelo insistir em adicioná-los
         if "```" in content:
             parts = content.split("```")
             for part in parts:
@@ -75,7 +64,6 @@ Use EXATAMENTE os caminhos da lista fornecida. Se não encontrar um campo, use n
 
         result = json.loads(content)
 
-        # Valida que os caminhos retornados existem de fato na lista
         path_set = set(all_paths)
         if result.get("input_path") not in path_set:
             result["input_path"] = None

@@ -264,6 +264,11 @@ def _migrate():
             if col not in lp_cols:
                 conn.execute(text(f"ALTER TABLE llm_providers ADD COLUMN {col} TEXT"))
 
+        # workspaces: provedor LLM para funcionalidades do sistema
+        ws_cols2 = {c["name"] for c in insp.get_columns("workspaces")}
+        if "system_llm_provider_id" not in ws_cols2:
+            conn.execute(text("ALTER TABLE workspaces ADD COLUMN system_llm_provider_id INTEGER REFERENCES llm_providers(id)"))
+
         conn.commit()
 
 _migrate()

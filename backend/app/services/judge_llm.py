@@ -149,3 +149,19 @@ def resolve_judge(db, provider_id: Optional[int] = None) -> Optional[CustomJudge
     else:
         provider = db.query(LLMProvider).first()
     return get_judge_from_provider(provider)
+
+
+def resolve_system_judge(db, workspace_id: Optional[int] = None) -> Optional[CustomJudgeLLM]:
+    """
+    Resolve o judge para funcionalidades do sistema (optimize, compare, field mapper).
+    Prioridade: system_llm_provider_id do workspace → primeiro provider disponível.
+    """
+    from ..models import LLMProvider, Workspace
+    provider = None
+    if workspace_id:
+        ws = db.get(Workspace, workspace_id)
+        if ws and ws.system_llm_provider_id:
+            provider = db.get(LLMProvider, ws.system_llm_provider_id)
+    if provider is None:
+        provider = db.query(LLMProvider).first()
+    return get_judge_from_provider(provider)

@@ -67,7 +67,10 @@ def current_workspace(ctx: WorkspaceContext = Depends(get_current_workspace)):
 
 @router.get("/settings", response_model=WorkspaceSettingsOut)
 def get_workspace_settings(ctx: WorkspaceContext = Depends(get_current_workspace)):
-    return WorkspaceSettingsOut(chat_llm_provider_id=ctx.workspace.chat_llm_provider_id)
+    return WorkspaceSettingsOut(
+        chat_llm_provider_id=ctx.workspace.chat_llm_provider_id,
+        system_llm_provider_id=ctx.workspace.system_llm_provider_id,
+    )
 
 
 @router.patch("/settings", response_model=WorkspaceSettingsOut)
@@ -78,10 +81,16 @@ def update_workspace_settings(
 ):
     require_writer(ctx)
     ws = db.get(Workspace, ctx.workspace_id)
-    ws.chat_llm_provider_id = data.chat_llm_provider_id
+    if "chat_llm_provider_id" in data.model_fields_set:
+        ws.chat_llm_provider_id = data.chat_llm_provider_id
+    if "system_llm_provider_id" in data.model_fields_set:
+        ws.system_llm_provider_id = data.system_llm_provider_id
     db.commit()
     db.refresh(ws)
-    return WorkspaceSettingsOut(chat_llm_provider_id=ws.chat_llm_provider_id)
+    return WorkspaceSettingsOut(
+        chat_llm_provider_id=ws.chat_llm_provider_id,
+        system_llm_provider_id=ws.system_llm_provider_id,
+    )
 
 
 @router.post("/", response_model=WorkspaceOut, status_code=201)

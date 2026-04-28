@@ -41,7 +41,6 @@ def _translate_reasons(reasons: dict[str, str], judge) -> dict[str, str]:
         f"{payload}"
     )
 
-    # Tenta com o judge customizado primeiro
     if judge is not None:
         try:
             translated_json, _ = judge.generate(prompt)
@@ -50,19 +49,7 @@ def _translate_reasons(reasons: dict[str, str], judge) -> dict[str, str]:
         except Exception:
             pass
 
-    # Fallback: OpenAI direto (quando DeepEval usa OPENAI_API_KEY)
-    try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        response = client.chat.completions.create(
-            model=os.getenv("JUDGE_MODEL", "gpt-4o-mini"),
-            messages=[{"role": "user", "content": prompt}],
-        )
-        translated_json = response.choices[0].message.content or ""
-        translated = json.loads(translated_json)
-        return {k: translated.get(k, v) for k, v in reasons.items()}
-    except Exception:
-        return reasons
+    return reasons
 
 # Importações opcionais — deepeval pode não ter todas as versões
 try:

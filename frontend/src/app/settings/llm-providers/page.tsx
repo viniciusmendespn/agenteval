@@ -119,7 +119,9 @@ export default function LLMProvidersPage() {
   const [testResults, setTestResults] = useState<Record<number, { ok: boolean; msg: string }>>({})
   const [formOpen, setFormOpen] = useState(false)
   const [chatProviderId, setChatProviderId] = useState<number | null>(null)
+  const [systemProviderId, setSystemProviderId] = useState<number | null>(null)
   const [savingChatProvider, setSavingChatProvider] = useState(false)
+  const [savingSystemProvider, setSavingSystemProvider] = useState(false)
 
   function load() {
     setLoading(true)
@@ -128,19 +130,35 @@ export default function LLMProvidersPage() {
 
   useEffect(() => {
     load()
-    getWorkspaceSettings().then(s => setChatProviderId(s.chat_llm_provider_id)).catch(() => {})
+    getWorkspaceSettings().then(s => {
+      setChatProviderId(s.chat_llm_provider_id)
+      setSystemProviderId(s.system_llm_provider_id)
+    }).catch(() => {})
   }, [])
 
   async function handleSaveChatProvider(id: number | null) {
     setSavingChatProvider(true)
     try {
-      await updateWorkspaceSettings({ chat_llm_provider_id: id })
+      await updateWorkspaceSettings({ chat_llm_provider_id: id, system_llm_provider_id: systemProviderId })
       setChatProviderId(id)
-      toast.success("Provedor do assistente atualizado")
+      toast.success("Provedor do chat atualizado")
     } catch {
       toast.error("Erro ao salvar")
     } finally {
       setSavingChatProvider(false)
+    }
+  }
+
+  async function handleSaveSystemProvider(id: number | null) {
+    setSavingSystemProvider(true)
+    try {
+      await updateWorkspaceSettings({ chat_llm_provider_id: chatProviderId, system_llm_provider_id: id })
+      setSystemProviderId(id)
+      toast.success("Provedor do sistema atualizado")
+    } catch {
+      toast.error("Erro ao salvar")
+    } finally {
+      setSavingSystemProvider(false)
     }
   }
 
@@ -279,6 +297,40 @@ export default function LLMProvidersPage() {
                 ))}
               </select>
               {savingChatProvider && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Funcionalidades do sistema */}
+      <section className="flame-panel px-5 py-4">
+        <div className="flex items-start gap-3">
+          <div className="flame-icon-shell h-10 w-10 shrink-0 mt-0.5">
+            <Zap className="h-5 w-5 text-red-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-gray-900">Funcionalidades do sistema</h2>
+            <p className="text-sm text-gray-500 mt-0.5 mb-3">
+              Provedor usado para otimizar prompts, comparar versões e sugerir mapeamento de campos em imports.
+            </p>
+            <div className="flex items-center gap-3">
+              <select
+                className="flex-1 max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
+                value={systemProviderId ?? ""}
+                onChange={e => {
+                  const val = e.target.value === "" ? null : Number(e.target.value)
+                  handleSaveSystemProvider(val)
+                }}
+                disabled={savingSystemProvider || loading}
+              >
+                <option value="">Primeiro disponível (automático)</option>
+                {providers.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {p.model_name} ({p.provider_type})
+                  </option>
+                ))}
+              </select>
+              {savingSystemProvider && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
             </div>
           </div>
         </div>

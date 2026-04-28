@@ -17,6 +17,7 @@ from ..services.importer import (
     to_str,
 )
 from ..services.field_mapper import suggest_mapping
+from ..services.judge_llm import resolve_system_judge
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -51,7 +52,11 @@ class AppendRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("/analyze")
-async def analyze_file(file: UploadFile = File(...)):
+async def analyze_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
     """Analisa arquivo com IA e sugere mapeamento de campos."""
     content = await file.read()
     try:
@@ -65,7 +70,8 @@ async def analyze_file(file: UploadFile = File(...)):
     all_paths = extract_all_paths(records)
     sample = records[:3]
     file_id = save_tmp(records)
-    suggestion = suggest_mapping(sample, all_paths)
+    judge = resolve_system_judge(db, workspace.workspace_id)
+    suggestion = suggest_mapping(sample, all_paths, judge=judge)
 
     return {
         "file_id": file_id,
