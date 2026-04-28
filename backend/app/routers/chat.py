@@ -587,6 +587,168 @@ class ChatResponse(BaseModel):
     tokens: int = 0
 
 
+# ── AWS Bedrock compatibility wrapper ─────────────────────────────────────────
+
+class _BFakeToolCall:
+    """Simula ChatCompletionMessageToolCall do OpenAI."""
+    def __init__(self, tool_use_id: str, name: str, arguments: str):
+        self.id = tool_use_id
+        self.type = "function"
+        self.function = type("F", (), {"name": name, "arguments": arguments})()
+
+class _BFakeMessage:
+    """Simula ChatCompletionMessage do OpenAI."""
+    def __init__(self, role: str, content, tool_calls=None, bedrock_content=None):
+        self.role = role
+        self.content = content
+        self.tool_calls = tool_calls
+        self._bedrock_content = bedrock_content  # blocos originais para reenvio
+
+class _BFakeChoice:
+    def __init__(self, message, finish_reason: str):
+        self.message = message
+        self.finish_reason = finish_reason
+
+class _BFakeUsage:
+    def __init__(self, total_tokens: int):
+        self.total_tokens = total_tokens
+
+class _BFakeResponse:
+    def __init__(self, resp: dict):
+        output_msg = resp["output"]["message"]
+        stop_reason = resp.get("stopReason", "end_turn")
+        total = resp.get("usage", {}).get("totalTokens", 0)
+
+        text_content = None
+        tool_calls = None
+        for block in output_msg.get("content", []):
+            if "text" in block:
+                text_content = block["text"]
+            elif "toolUse" in block:
+                tu = block["toolUse"]
+                if tool_calls is None:
+                    tool_calls = []
+                tool_calls.append(_BFakeToolCall(
+                    tu["toolUseId"], tu["name"], json.dumps(tu["input"])
+                ))
+
+        finish = "tool_calls" if stop_reason == "tool_use" else "stop"
+        msg = _BFakeMessage(
+            role="assistant",
+            content=text_content,
+            tool_calls=tool_calls,
+            bedrock_content=output_msg["content"],
+        )
+        self.choices = [_BFakeChoice(msg, finish)]
+        self.usage = _BFakeUsage(total)
+
+
+class BedrockCompat:
+    """
+    Wrapper boto3 que expõe client.chat.completions.create() compatível com OpenAI.
+    Converte mensagens OpenAI ↔ Bedrock converse API automaticamente.
+    """
+
+    def __init__(self, provider):
+        import boto3
+        self._bc = boto3.client(
+            "bedrock-runtime",
+            region_name=provider.aws_region or "us-east-1",
+            aws_access_key_id=provider.aws_access_key_id,
+            aws_secret_access_key=provider.aws_secret_access_key,
+            aws_session_token=provider.aws_session_token or None,
+        )
+        self._model = provider.model_name
+
+        _self = self
+
+        class _Completions:
+            def create(self, model=None, messages=None, tools=None, **kw):
+                return _self._create(messages=messages, tools=tools)
+
+        class _Chat:
+            completions = _Completions()
+
+        self.chat = _Chat()
+
+    def _create(self, messages, tools=None):
+        bedrock_msgs = []
+        system_text = None
+        pending_tool_results = []
+
+        for msg in messages:
+            # suporta tanto dicts quanto objetos OpenAI/_BFakeMessage
+            is_dict = isinstance(msg, dict)
+            role    = msg["role"]    if is_dict else msg.role
+            content = msg.get("content") if is_dict else msg.content
+
+            if role == "system":
+                system_text = content
+                continue
+
+            # flush resultados de tools antes de qualquer mensagem não-tool
+            if pending_tool_results and role != "tool":
+                bedrock_msgs.append({"role": "user", "content": pending_tool_results})
+                pending_tool_results = []
+
+            if role == "tool":
+                tool_call_id = msg.get("tool_call_id") if is_dict else getattr(msg, "tool_call_id", None)
+                pending_tool_results.append({
+                    "toolResult": {
+                        "toolUseId": tool_call_id,
+                        "content": [{"text": content or ""}],
+                    }
+                })
+                continue
+
+            if role == "assistant":
+                bedrock_content = getattr(msg, "_bedrock_content", None)
+                if bedrock_content is not None:
+                    # mensagem que veio de uma resposta Bedrock anterior — reusa os blocos originais
+                    bedrock_msgs.append({"role": "assistant", "content": bedrock_content})
+                else:
+                    tool_calls = msg.get("tool_calls") if is_dict else getattr(msg, "tool_calls", None)
+                    blocks = []
+                    if content:
+                        blocks.append({"text": content})
+                    for tc in (tool_calls or []):
+                        blocks.append({"toolUse": {
+                            "toolUseId": tc.id,
+                            "name": tc.function.name,
+                            "input": json.loads(tc.function.arguments),
+                        }})
+                    bedrock_msgs.append({"role": "assistant", "content": blocks or [{"text": ""}]})
+                continue
+
+            # user / outros
+            bedrock_msgs.append({"role": role, "content": [{"text": content or ""}]})
+
+        if pending_tool_results:
+            bedrock_msgs.append({"role": "user", "content": pending_tool_results})
+
+        call_kw: dict = {"modelId": self._model, "messages": bedrock_msgs}
+        if system_text:
+            call_kw["system"] = [{"text": system_text}]
+        if tools:
+            call_kw["toolConfig"] = {
+                "tools": [
+                    {
+                        "toolSpec": {
+                            "name": t["function"]["name"],
+                            "description": t["function"]["description"],
+                            "inputSchema": {"json": t["function"]["parameters"]},
+                        }
+                    }
+                    for t in tools
+                ]
+            }
+
+        resp = self._bc.converse(**call_kw)
+        return _BFakeResponse(resp)
+
+
+# ── Resolve client ────────────────────────────────────────────────────────────
+
 def _resolve_chat_client(db: Session, workspace: WorkspaceContext):
     """Retorna (client, model_name) usando o provedor LLM configurado para o workspace."""
     provider_id = workspace.workspace.chat_llm_provider_id
@@ -601,6 +763,8 @@ def _resolve_chat_client(db: Session, workspace: WorkspaceContext):
             "Nenhum provedor LLM configurado. Acesse Configurações → Provedores LLM para adicionar um.",
         )
 
+    if provider.provider_type == "bedrock":
+        return BedrockCompat(provider), provider.model_name
     if provider.provider_type == "openai":
         client = OpenAI(api_key=provider.api_key, base_url=provider.base_url or None)
     else:
