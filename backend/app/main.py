@@ -275,6 +275,11 @@ def _migrate():
             if col not in ws_cols3:
                 conn.execute(text(f"ALTER TABLE workspaces ADD COLUMN {col} INTEGER REFERENCES llm_providers(id)"))
 
+        # llm_providers: desabilitar verificação SSL por provider (proxy corporativo)
+        lp_cols2 = {c["name"] for c in insp.get_columns("llm_providers")}
+        if "ssl_verify" not in lp_cols2:
+            conn.execute(text("ALTER TABLE llm_providers ADD COLUMN ssl_verify BOOLEAN NOT NULL DEFAULT 1"))
+
         conn.commit()
 
 _migrate()

@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Optional
+import httpx
 from openai import AzureOpenAI, OpenAI
 from deepeval.models.base_model import DeepEvalBaseLLM
 
@@ -18,20 +19,24 @@ class CustomJudgeLLM(DeepEvalBaseLLM):
         model_name: str | None = None,
         api_version: str | None = None,
         provider_type: str = "azure",
+        ssl_verify: bool = True,
     ):
         self._base_url = base_url or os.getenv("JUDGE_BASE_URL")
         self._api_key = api_key or os.getenv("JUDGE_API_KEY", "")
         self._model = model_name or os.getenv("JUDGE_MODEL", "gpt-4")
         self._api_version = api_version or os.getenv("JUDGE_API_VERSION", "2024-02-01")
         self._provider_type = provider_type
+        self._ssl_verify = ssl_verify
 
     def load_model(self):
+        http_client = httpx.Client(verify=self._ssl_verify)
         if self._provider_type == "openai":
-            return OpenAI(api_key=self._api_key, base_url=self._base_url or None)
+            return OpenAI(api_key=self._api_key, base_url=self._base_url or None, http_client=http_client)
         return AzureOpenAI(
             azure_endpoint=self._base_url,
             api_key=self._api_key,
             api_version=self._api_version,
+            http_client=http_client,
         )
 
     def generate(self, prompt: str, schema=None):
@@ -70,6 +75,7 @@ class BedrockJudgeLLM(DeepEvalBaseLLM):
         aws_region: str,
         aws_session_token: str | None = None,
         aws_account_id: str | None = None,
+        ssl_verify: bool = True,
     ):
         import boto3
         self._model = model_name
@@ -79,6 +85,7 @@ class BedrockJudgeLLM(DeepEvalBaseLLM):
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
             aws_session_token=aws_session_token or None,
+            verify=ssl_verify,
         )
 
     def load_model(self):
@@ -118,6 +125,9 @@ def get_judge_from_provider(provider) -> Optional[CustomJudgeLLM]:
     """Cria judge a partir de um LLMProvider do banco."""
     if provider is None:
         return None
+    ssl_verify = getattr(provider, "ssl_verify", True)
+    if ssl_verify is None:
+        ssl_verify = True
     if provider.provider_type == "bedrock":
         return BedrockJudgeLLM(
             model_name=provider.model_name,
@@ -126,6 +136,7 @@ def get_judge_from_provider(provider) -> Optional[CustomJudgeLLM]:
             aws_region=provider.aws_region or "us-east-1",
             aws_session_token=provider.aws_session_token,
             aws_account_id=provider.aws_account_id,
+            ssl_verify=ssl_verify,
         )
     return CustomJudgeLLM(
         base_url=provider.base_url,
@@ -133,6 +144,7 @@ def get_judge_from_provider(provider) -> Optional[CustomJudgeLLM]:
         model_name=provider.model_name,
         api_version=provider.api_version,
         provider_type=provider.provider_type,
+        ssl_verify=ssl_verify,
     )
 
 

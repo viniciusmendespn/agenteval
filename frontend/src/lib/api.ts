@@ -59,6 +59,7 @@ export type LLMProvider = {
   aws_secret_access_key?: string
   aws_session_token?: string
   aws_region?: string
+  ssl_verify: boolean
   created_at: string
 }
 

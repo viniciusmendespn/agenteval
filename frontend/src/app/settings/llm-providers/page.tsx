@@ -89,6 +89,19 @@ function ProviderFields({ f, set }: { f: FormData; set: (fn: (prev: FormData) =>
           )}
         </>
       )}
+      <div className="flex items-center gap-2 pt-1">
+        <input
+          id="ssl_verify"
+          type="checkbox"
+          checked={f.ssl_verify ?? true}
+          onChange={e => set(p => ({ ...p, ssl_verify: e.target.checked }))}
+          className="h-4 w-4 rounded border-gray-300"
+        />
+        <label htmlFor="ssl_verify" className="text-xs text-gray-600 select-none cursor-pointer">
+          Verificar certificado SSL
+          <span className="ml-1 text-gray-400">(desmarque se houver proxy corporativo com inspeção SSL)</span>
+        </label>
+      </div>
     </>
   )
 }
@@ -105,6 +118,7 @@ const EMPTY: FormData = {
   aws_secret_access_key: "",
   aws_session_token: "",
   aws_region: "",
+  ssl_verify: true,
 }
 
 export default function LLMProvidersPage() {
@@ -209,6 +223,7 @@ export default function LLMProvidersPage() {
       aws_secret_access_key: p.aws_secret_access_key ?? "",
       aws_session_token: p.aws_session_token ?? "",
       aws_region: p.aws_region ?? "",
+      ssl_verify: p.ssl_verify ?? true,
     })
   }
 
