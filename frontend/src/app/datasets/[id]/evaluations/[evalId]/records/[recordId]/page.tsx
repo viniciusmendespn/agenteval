@@ -40,7 +40,7 @@ export default function RecordDetailPage() {
   const criteria = profile?.criteria ?? []
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl space-y-6">
       <Breadcrumb items={[
         { label: "Datasets", href: "/datasets" },
         { label: `Avaliação #${evalId}`, href: `/datasets/${id}/evaluations/${evalId}` },
