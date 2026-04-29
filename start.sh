@@ -77,7 +77,8 @@ if [ ! -d "node_modules" ]; then
     echo "[6/6] Instalando dependências Node..."
     npm install
 else
-    echo "[6/6] node_modules já existe."
+    echo "[6/6] Sincronizando dependências Node..."
+    npm ci --prefer-offline -q
 fi
 
 echo ""
