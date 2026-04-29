@@ -1,5 +1,7 @@
 "use client"
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useRef } from "react"
+import JsonEditor from "@/components/ui/JsonEditor"
+import { type ReactCodeMirrorRef } from "@uiw/react-codemirror"
 import { useParams } from "next/navigation"
 import { diffChars } from "diff"
 import {
@@ -130,6 +132,18 @@ export default function EditAgentPage() {
     loadVersions()
   }, [id])
 
+  const bodyRef = useRef<ReactCodeMirrorRef>(null)
+
+  function insertPlaceholder(placeholder: string) {
+    const view = bodyRef.current?.view
+    if (view) {
+      view.dispatch(view.state.replaceSelection(placeholder))
+      view.focus()
+    } else {
+      handleBodyChange(requestBody + placeholder)
+    }
+  }
+
   function applyPreset(p: typeof PRESETS[0]) {
     setRequestBody(p.body); setOutputField(p.output)
     if (p.sse) setConnectionType("sse"); setBodyError(null); setPreview(null)
@@ -137,7 +151,7 @@ export default function EditAgentPage() {
 
   function handleBodyChange(val: string) {
     setRequestBody(val)
-    try { JSON.parse(val.replace(/\{\{[^}]+\}\}/g, '"placeholder"')); setBodyError(null) }
+    try { JSON.parse(val.replace(/\{\{[^}]+\}\}/g, 'placeholder')); setBodyError(null) }
     catch { setBodyError("JSON inválido") }
   }
 
@@ -452,8 +466,27 @@ export default function EditAgentPage() {
                 {PRESETS.map(p => <option key={p.label} value={p.label}>{p.label}</option>)}
               </select>
             </div>
-            <p className="text-xs text-gray-400 mb-1">Use <code className="bg-gray-100 px-1 rounded">{"{{message}}"}</code>, <code className="bg-gray-100 px-1 rounded">{"{{sessionId}}"}</code> e <code className="bg-gray-100 px-1 rounded">{"{{system_prompt}}"}</code>.</p>
-            <textarea className={`${inp} h-32 font-mono text-xs resize-y ${bodyError ? "border-red-400" : ""}`} value={requestBody} onChange={e => handleBodyChange(e.target.value)} spellCheck={false} />
+            <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+              <span className="text-xs text-gray-400">Inserir:</span>
+              {["{{message}}", "{{sessionId}}", "{{systemPrompt}}"].map(p => (
+                <button key={p} type="button" onClick={() => insertPlaceholder(p)}
+                  className="text-xs font-mono bg-gray-100 hover:bg-red-50 hover:text-red-700 border border-gray-200 hover:border-red-300 px-1.5 py-0.5 rounded transition-colors">
+                  {p}
+                </button>
+              ))}
+              <span className="text-xs text-gray-300 mx-0.5">·</span>
+              <span className="text-xs text-gray-400">ou qualquer variável nos casos de teste: <code className="font-mono text-gray-400">{"{{nomeVariavel}}"}</code></span>
+              <button type="button" title="Formatar JSON" onClick={() => {
+                try {
+                  const formatted = JSON.stringify(JSON.parse(requestBody.replace(/\{\{[^}]+\}\}/g, (m) => `__PH_${m.slice(2,-2)}__`)), null, 2)
+                    .replace(/"__PH_([^"]+)__"/g, (_, k) => `"{{${k}}}"`)
+                  handleBodyChange(formatted)
+                } catch {}
+              }} className="ml-auto text-xs text-gray-400 hover:text-gray-700 transition-colors font-mono">
+                {"{ }"}
+              </button>
+            </div>
+            <JsonEditor ref={bodyRef} value={requestBody} onChange={handleBodyChange} hasError={!!bodyError} />
             {bodyError && <p className="text-xs text-red-500 mt-1">{bodyError}</p>}
           </div>
           <div>
