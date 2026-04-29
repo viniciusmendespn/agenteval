@@ -276,9 +276,11 @@ def _migrate():
                 conn.execute(text(f"ALTER TABLE workspaces ADD COLUMN {col} INTEGER REFERENCES llm_providers(id)"))
 
         # llm_providers: desabilitar verificação SSL por provider (proxy corporativo)
+        # Default false — ambientes corporativos com proxy SSL inspection são o caso comum
         lp_cols2 = {c["name"] for c in insp.get_columns("llm_providers")}
         if "ssl_verify" not in lp_cols2:
-            conn.execute(text("ALTER TABLE llm_providers ADD COLUMN ssl_verify BOOLEAN NOT NULL DEFAULT 1"))
+            conn.execute(text("ALTER TABLE llm_providers ADD COLUMN ssl_verify BOOLEAN NOT NULL DEFAULT 0"))
+        conn.execute(text("UPDATE llm_providers SET ssl_verify = 0 WHERE ssl_verify IS NULL OR ssl_verify = 1"))
 
         conn.commit()
 

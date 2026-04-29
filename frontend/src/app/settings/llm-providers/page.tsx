@@ -99,7 +99,7 @@ function ProviderFields({ f, set }: { f: FormData; set: (fn: (prev: FormData) =>
         />
         <label htmlFor="ssl_verify" className="text-xs text-gray-600 select-none cursor-pointer">
           Verificar certificado SSL
-          <span className="ml-1 text-gray-400">(desmarque se houver proxy corporativo com inspeção SSL)</span>
+          <span className="ml-1 text-gray-400">(marque apenas se o ambiente não usar proxy com inspeção SSL)</span>
         </label>
       </div>
     </>
@@ -118,7 +118,7 @@ const EMPTY: FormData = {
   aws_secret_access_key: "",
   aws_session_token: "",
   aws_region: "",
-  ssl_verify: true,
+  ssl_verify: false,
 }
 
 export default function LLMProvidersPage() {

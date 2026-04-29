@@ -125,9 +125,9 @@ def get_judge_from_provider(provider) -> Optional[CustomJudgeLLM]:
     """Cria judge a partir de um LLMProvider do banco."""
     if provider is None:
         return None
-    ssl_verify = getattr(provider, "ssl_verify", True)
+    ssl_verify = getattr(provider, "ssl_verify", False)
     if ssl_verify is None:
-        ssl_verify = True
+        ssl_verify = False
     if provider.provider_type == "bedrock":
         return BedrockJudgeLLM(
             model_name=provider.model_name,

@@ -63,7 +63,7 @@ class LLMProvider(Base):
     aws_secret_access_key = Column(String, nullable=True)
     aws_session_token = Column(String, nullable=True)
     aws_region = Column(String, nullable=True)
-    ssl_verify = Column(Boolean, default=True, nullable=False)
+    ssl_verify = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

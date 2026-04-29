@@ -17,7 +17,7 @@ class LLMProviderCreate(BaseModel):
     aws_secret_access_key: Optional[str] = None
     aws_session_token: Optional[str] = None
     aws_region: Optional[str] = None
-    ssl_verify: bool = True
+    ssl_verify: bool = False
 
 class LLMProviderOut(LLMProviderCreate):
     id: int
