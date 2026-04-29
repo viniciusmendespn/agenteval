@@ -77,8 +77,7 @@ if not exist "node_modules" (
     echo [6/6] Instalando dependencias Node...
     npm install
 ) else (
-    echo [6/6] Sincronizando dependencias Node...
-    npm ci --prefer-offline -q
+    echo [6/6] node_modules ja existe.
 )
 
 echo.
