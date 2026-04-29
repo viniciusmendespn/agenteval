@@ -219,6 +219,7 @@ def _evaluate_case(run_id: int, tc: TestCase, agent: Agent, profile: EvaluationP
         token_output_field=getattr(agent, "token_output_field", None),
         token_header_name=getattr(agent, "token_header_name", None),
         system_prompt=agent.system_prompt or "",
+        ssl_verify=getattr(agent, "ssl_verify", False) or False,
     )
 
     if turns is None:

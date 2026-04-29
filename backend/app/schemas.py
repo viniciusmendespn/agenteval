@@ -82,6 +82,7 @@ class AgentCreate(BaseModel):
     tags: list[str] = []
     extra_metadata: dict = {}
     agent_notes: Optional[str] = None
+    ssl_verify: bool = False
 
 class AgentOut(AgentCreate):
     id: int

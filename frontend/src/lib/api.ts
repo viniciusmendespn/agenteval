@@ -100,6 +100,7 @@ export type Agent = {
   tags: string[]
   extra_metadata: Record<string, unknown>
   agent_notes?: string | null
+  ssl_verify: boolean
   created_at: string
 }
 

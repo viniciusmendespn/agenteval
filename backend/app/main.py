@@ -219,6 +219,7 @@ def _migrate():
             ("tags",            "JSON"),
             ("extra_metadata",  "JSON"),
             ("agent_notes",     "TEXT"),
+            ("ssl_verify",      "BOOLEAN NOT NULL DEFAULT 0"),
         ]:
             if col not in ag_cols_fresh:
                 conn.execute(text(f"ALTER TABLE agents ADD COLUMN {col} {definition}"))

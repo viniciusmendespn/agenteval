@@ -30,6 +30,7 @@ class Agent(Base):
     tags = Column(JSON, nullable=True, default=list)
     extra_metadata = Column(JSON, nullable=True, default=dict)
     agent_notes = Column(Text, nullable=True)
+    ssl_verify = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

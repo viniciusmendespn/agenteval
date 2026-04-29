@@ -60,22 +60,23 @@ def _build_payload(request_body_template: str, message: str, session_id: str = "
 
 
 def _fetch_token(token_url: str, token_request_body: str | None,
-                 token_output_field: str | None) -> str:
+                 token_output_field: str | None, ssl_verify: bool = False) -> str:
     """Faz a pré-chamada para obter um token dinâmico."""
     payload = json.loads(token_request_body or "{}")
     resp = httpx.post(token_url, json=payload,
-                      headers={"Content-Type": "application/json"}, timeout=30)
+                      headers={"Content-Type": "application/json"}, timeout=30,
+                      verify=ssl_verify)
     resp.raise_for_status()
     return _resolve_path(resp.json(), token_output_field or "token")
 
 
 def _call_http(url: str, api_key: str, message: str, request_body: str, output_field: str,
                timeout: int, session_id: str = "", variables: dict | None = None,
-               system_prompt: str = "") -> str:
+               system_prompt: str = "", ssl_verify: bool = False) -> str:
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = _build_payload(request_body, message, session_id, variables, system_prompt)
 
-    response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
+    response = httpx.post(url, json=payload, headers=headers, timeout=timeout, verify=ssl_verify)
     if response.is_error:
         body = response.text[:500]
         logger.error("Agent HTTP %s: %s", response.status_code, body)
@@ -91,7 +92,7 @@ def _call_http(url: str, api_key: str, message: str, request_body: str, output_f
 
 def _call_sse(url: str, api_key: str, message: str, request_body: str, output_field: str,
               timeout: int, session_id: str = "", variables: dict | None = None,
-              system_prompt: str = "") -> str:
+              system_prompt: str = "", ssl_verify: bool = False) -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -101,7 +102,7 @@ def _call_sse(url: str, api_key: str, message: str, request_body: str, output_fi
     chunks: list[str] = []
     current_event: str | None = None
 
-    with httpx.stream("POST", url, json=payload, headers=headers, timeout=timeout) as response:
+    with httpx.stream("POST", url, json=payload, headers=headers, timeout=timeout, verify=ssl_verify) as response:
         response.raise_for_status()
         for line in response.iter_lines():
             line = line.strip()
@@ -151,18 +152,19 @@ def call_agent(
     token_output_field: str | None = None,
     token_header_name: str | None = None,
     system_prompt: str = "",
+    ssl_verify: bool = False,
 ) -> str:
     effective_api_key = api_key
     effective_variables = dict(variables or {})
 
     if token_url:
-        token = _fetch_token(token_url, token_request_body, token_output_field)
+        token = _fetch_token(token_url, token_request_body, token_output_field, ssl_verify)
         effective_variables["token"] = token
         if not api_key:
             effective_api_key = token
 
     if connection_type == "sse":
         return _call_sse(url, effective_api_key, message, request_body,
-                         output_field, timeout, session_id, effective_variables, system_prompt)
+                         output_field, timeout, session_id, effective_variables, system_prompt, ssl_verify)
     return _call_http(url, effective_api_key, message, request_body,
-                      output_field, timeout, session_id, effective_variables, system_prompt)
+                      output_field, timeout, session_id, effective_variables, system_prompt, ssl_verify)

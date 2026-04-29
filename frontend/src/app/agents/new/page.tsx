@@ -65,6 +65,7 @@ export default function NewAgentPage() {
   const [extraMetadata, setExtraMetadata] = useState("{}")
   const [extraMetaError, setExtraMetaError] = useState<string | null>(null)
   const [agentNotes, setAgentNotes] = useState("")
+  const [sslVerify, setSslVerify] = useState(false)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -150,6 +151,7 @@ export default function NewAgentPage() {
         tags,
         extra_metadata: parsedExtra,
         agent_notes: agentNotes || undefined,
+        ssl_verify: sslVerify,
       })
       showAfterNav("Agente criado")
       window.location.href = "/agents"
@@ -264,6 +266,14 @@ export default function NewAgentPage() {
               placeholder="Ex: KB v3.2 (atualizada em 20/04), tool de consulta de saldo ativa, tool de PIX desativada para testes..."
               spellCheck={false}
             />
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <input type="checkbox" id="ssl_verify" checked={sslVerify} onChange={e => setSslVerify(e.target.checked)}
+              className="w-3.5 h-3.5 accent-red-600 cursor-pointer" />
+            <label htmlFor="ssl_verify" className="text-xs text-gray-600 select-none cursor-pointer">
+              Verificar certificado SSL
+            </label>
+            <span className="text-xs text-gray-400">(desativado por padrão — ambientes com proxy corporativo)</span>
           </div>
         </section>
 

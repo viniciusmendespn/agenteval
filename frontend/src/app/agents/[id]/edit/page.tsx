@@ -59,6 +59,7 @@ export default function EditAgentPage() {
   const [extraMetadata, setExtraMetadata] = useState("{}")
   const [extraError, setExtraError] = useState<string | null>(null)
   const [agentNotes, setAgentNotes] = useState("")
+  const [sslVerify, setSslVerify] = useState(false)
 
   const [pingResult, setPingResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [pinging, setPinging] = useState(false)
@@ -119,6 +120,7 @@ export default function EditAgentPage() {
         setTags(Array.isArray(a.tags) ? a.tags : [])
         setExtraMetadata(Object.keys(a.extra_metadata || {}).length ? JSON.stringify(a.extra_metadata, null, 2) : "{}")
         setAgentNotes(a.agent_notes ?? "")
+        setSslVerify(a.ssl_verify ?? false)
         if (a.token_url) {
           setUseTokenCall(true)
           setTokenUrl(a.token_url)
@@ -223,6 +225,7 @@ export default function EditAgentPage() {
         tags,
         extra_metadata: parsedExtra,
         agent_notes: agentNotes || undefined,
+        ssl_verify: sslVerify,
       })
       showAfterNav("Agente atualizado")
       window.location.href = "/agents"
@@ -343,6 +346,14 @@ export default function EditAgentPage() {
               placeholder="Ex: KB v3.2 (atualizada em 20/04), tool de consulta de saldo ativa, tool de PIX desativada para testes..."
               spellCheck={false}
             />
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <input type="checkbox" id="ssl_verify" checked={sslVerify} onChange={e => setSslVerify(e.target.checked)}
+              className="w-3.5 h-3.5 accent-red-600 cursor-pointer" />
+            <label htmlFor="ssl_verify" className="text-xs text-gray-600 select-none cursor-pointer">
+              Verificar certificado SSL
+            </label>
+            <span className="text-xs text-gray-400">(desativado por padrão — ambientes com proxy corporativo)</span>
           </div>
         </section>
 

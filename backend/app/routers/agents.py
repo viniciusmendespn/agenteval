@@ -496,5 +496,6 @@ def playground_chat(
         token_request_body=agent.token_request_body,
         token_output_field=agent.token_output_field,
         token_header_name=agent.token_header_name,
+        ssl_verify=agent.ssl_verify or False,
     )
     return {"reply": reply, "session_id": req.session_id}
