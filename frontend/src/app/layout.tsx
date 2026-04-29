@@ -11,7 +11,10 @@ import { TooltipProvider } from "@/components/ui/Tooltip"
 import { PageTransition } from "@/components/ui/PageTransition"
 import NProgressBar from "@/components/NProgressBar"
 
-export const metadata: Metadata = { title: "Santander AgentEval" }
+export const metadata: Metadata = {
+  title: "Santander AgentEval",
+  icons: { icon: "/logo-santander.png" },
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
