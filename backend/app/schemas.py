@@ -348,13 +348,19 @@ class WorkspaceOut(BaseModel):
 
 
 class WorkspaceSettingsOut(BaseModel):
-    chat_llm_provider_id: Optional[int] = None
-    system_llm_provider_id: Optional[int] = None
+    chat_llm_provider_id:     Optional[int] = None
+    system_llm_provider_id:   Optional[int] = None
+    judge_llm_provider_id:    Optional[int] = None
+    analysis_llm_provider_id: Optional[int] = None
+    utility_llm_provider_id:  Optional[int] = None
 
     class Config:
         from_attributes = True
 
 
 class WorkspaceSettingsPatch(BaseModel):
-    chat_llm_provider_id: Optional[int] = None
-    system_llm_provider_id: Optional[int] = None
+    chat_llm_provider_id:     Optional[int] = None
+    system_llm_provider_id:   Optional[int] = None
+    judge_llm_provider_id:    Optional[int] = None
+    analysis_llm_provider_id: Optional[int] = None
+    utility_llm_provider_id:  Optional[int] = None

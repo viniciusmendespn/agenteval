@@ -70,6 +70,9 @@ def get_workspace_settings(ctx: WorkspaceContext = Depends(get_current_workspace
     return WorkspaceSettingsOut(
         chat_llm_provider_id=ctx.workspace.chat_llm_provider_id,
         system_llm_provider_id=ctx.workspace.system_llm_provider_id,
+        judge_llm_provider_id=ctx.workspace.judge_llm_provider_id,
+        analysis_llm_provider_id=ctx.workspace.analysis_llm_provider_id,
+        utility_llm_provider_id=ctx.workspace.utility_llm_provider_id,
     )
 
 
@@ -81,15 +84,18 @@ def update_workspace_settings(
 ):
     require_writer(ctx)
     ws = db.get(Workspace, ctx.workspace_id)
-    if "chat_llm_provider_id" in data.model_fields_set:
-        ws.chat_llm_provider_id = data.chat_llm_provider_id
-    if "system_llm_provider_id" in data.model_fields_set:
-        ws.system_llm_provider_id = data.system_llm_provider_id
+    for field in ["chat_llm_provider_id", "system_llm_provider_id",
+                  "judge_llm_provider_id", "analysis_llm_provider_id", "utility_llm_provider_id"]:
+        if field in data.model_fields_set:
+            setattr(ws, field, getattr(data, field))
     db.commit()
     db.refresh(ws)
     return WorkspaceSettingsOut(
         chat_llm_provider_id=ws.chat_llm_provider_id,
         system_llm_provider_id=ws.system_llm_provider_id,
+        judge_llm_provider_id=ws.judge_llm_provider_id,
+        analysis_llm_provider_id=ws.analysis_llm_provider_id,
+        utility_llm_provider_id=ws.utility_llm_provider_id,
     )
 
 

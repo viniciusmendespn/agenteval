@@ -10,14 +10,14 @@ from ..models import (
 )
 from ..services.agent_caller import call_agent
 from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
-from ..services.judge_llm import resolve_judge, resolve_system_judge
+from ..services.judge_llm import resolve_judge, resolve_task_judge
 
 
 def _resolve_judge(db, profile, workspace_id):
-    """Prioridade: provider do perfil → system_llm_provider_id do workspace → primeiro disponível."""
+    """Prioridade: provider do perfil → judge_llm_provider_id do workspace → primeiro disponível."""
     if getattr(profile, "llm_provider_id", None):
         return resolve_judge(db, profile.llm_provider_id)
-    return resolve_system_judge(db, workspace_id)
+    return resolve_task_judge(db, workspace_id, "judge")
 
 logger = logging.getLogger(__name__)
 

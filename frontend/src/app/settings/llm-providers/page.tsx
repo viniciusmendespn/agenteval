@@ -119,9 +119,13 @@ export default function LLMProvidersPage() {
   const [testResults, setTestResults] = useState<Record<number, { ok: boolean; msg: string }>>({})
   const [formOpen, setFormOpen] = useState(false)
   const [chatProviderId, setChatProviderId] = useState<number | null>(null)
-  const [systemProviderId, setSystemProviderId] = useState<number | null>(null)
+  const [judgeProviderId, setJudgeProviderId] = useState<number | null>(null)
+  const [analysisProviderId, setAnalysisProviderId] = useState<number | null>(null)
+  const [utilityProviderId, setUtilityProviderId] = useState<number | null>(null)
   const [savingChatProvider, setSavingChatProvider] = useState(false)
-  const [savingSystemProvider, setSavingSystemProvider] = useState(false)
+  const [savingJudgeProvider, setSavingJudgeProvider] = useState(false)
+  const [savingAnalysisProvider, setSavingAnalysisProvider] = useState(false)
+  const [savingUtilityProvider, setSavingUtilityProvider] = useState(false)
 
   function load() {
     setLoading(true)
@@ -132,34 +136,50 @@ export default function LLMProvidersPage() {
     load()
     getWorkspaceSettings().then(s => {
       setChatProviderId(s.chat_llm_provider_id)
-      setSystemProviderId(s.system_llm_provider_id)
+      setJudgeProviderId(s.judge_llm_provider_id)
+      setAnalysisProviderId(s.analysis_llm_provider_id)
+      setUtilityProviderId(s.utility_llm_provider_id)
     }).catch(() => {})
   }, [])
 
   async function handleSaveChatProvider(id: number | null) {
     setSavingChatProvider(true)
     try {
-      await updateWorkspaceSettings({ chat_llm_provider_id: id, system_llm_provider_id: systemProviderId })
+      await updateWorkspaceSettings({ chat_llm_provider_id: id, system_llm_provider_id: null, judge_llm_provider_id: judgeProviderId, analysis_llm_provider_id: analysisProviderId, utility_llm_provider_id: utilityProviderId })
       setChatProviderId(id)
       toast.success("Provedor do chat atualizado")
-    } catch {
-      toast.error("Erro ao salvar")
-    } finally {
-      setSavingChatProvider(false)
-    }
+    } catch { toast.error("Erro ao salvar") }
+    finally { setSavingChatProvider(false) }
   }
 
-  async function handleSaveSystemProvider(id: number | null) {
-    setSavingSystemProvider(true)
+  async function handleSaveJudgeProvider(id: number | null) {
+    setSavingJudgeProvider(true)
     try {
-      await updateWorkspaceSettings({ chat_llm_provider_id: chatProviderId, system_llm_provider_id: id })
-      setSystemProviderId(id)
-      toast.success("Provedor do sistema atualizado")
-    } catch {
-      toast.error("Erro ao salvar")
-    } finally {
-      setSavingSystemProvider(false)
-    }
+      await updateWorkspaceSettings({ chat_llm_provider_id: chatProviderId, system_llm_provider_id: null, judge_llm_provider_id: id, analysis_llm_provider_id: analysisProviderId, utility_llm_provider_id: utilityProviderId })
+      setJudgeProviderId(id)
+      toast.success("Provedor de avaliações atualizado")
+    } catch { toast.error("Erro ao salvar") }
+    finally { setSavingJudgeProvider(false) }
+  }
+
+  async function handleSaveAnalysisProvider(id: number | null) {
+    setSavingAnalysisProvider(true)
+    try {
+      await updateWorkspaceSettings({ chat_llm_provider_id: chatProviderId, system_llm_provider_id: null, judge_llm_provider_id: judgeProviderId, analysis_llm_provider_id: id, utility_llm_provider_id: utilityProviderId })
+      setAnalysisProviderId(id)
+      toast.success("Provedor de análise atualizado")
+    } catch { toast.error("Erro ao salvar") }
+    finally { setSavingAnalysisProvider(false) }
+  }
+
+  async function handleSaveUtilityProvider(id: number | null) {
+    setSavingUtilityProvider(true)
+    try {
+      await updateWorkspaceSettings({ chat_llm_provider_id: chatProviderId, system_llm_provider_id: null, judge_llm_provider_id: judgeProviderId, analysis_llm_provider_id: analysisProviderId, utility_llm_provider_id: id })
+      setUtilityProviderId(id)
+      toast.success("Provedor utilitário atualizado")
+    } catch { toast.error("Erro ao salvar") }
+    finally { setSavingUtilityProvider(false) }
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -302,35 +322,82 @@ export default function LLMProvidersPage() {
         </div>
       </section>
 
-      {/* Funcionalidades do sistema */}
+      {/* Avaliações — juiz LLM */}
       <section className="flame-panel px-5 py-4">
         <div className="flex items-start gap-3">
           <div className="flame-icon-shell h-10 w-10 shrink-0 mt-0.5">
             <Zap className="h-5 w-5 text-red-600" />
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="text-base font-semibold text-gray-900">Funcionalidades do sistema</h2>
+            <h2 className="text-base font-semibold text-gray-900">Avaliações (juiz LLM)</h2>
             <p className="text-sm text-gray-500 mt-0.5 mb-3">
-              Provedor usado para otimizar prompts, comparar versões e sugerir mapeamento de campos em imports.
+              Juiz usado em runs e avaliações de datasets quando o perfil de avaliação não define o próprio. Recomendado: Sonnet ou superior.
             </p>
             <div className="flex items-center gap-3">
               <select
                 className="flex-1 max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
-                value={systemProviderId ?? ""}
-                onChange={e => {
-                  const val = e.target.value === "" ? null : Number(e.target.value)
-                  handleSaveSystemProvider(val)
-                }}
-                disabled={savingSystemProvider || loading}
+                value={judgeProviderId ?? ""}
+                onChange={e => handleSaveJudgeProvider(e.target.value === "" ? null : Number(e.target.value))}
+                disabled={savingJudgeProvider || loading}
               >
                 <option value="">Primeiro disponível (automático)</option>
-                {providers.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} — {p.model_name} ({p.provider_type})
-                  </option>
-                ))}
+                {providers.map(p => <option key={p.id} value={p.id}>{p.name} — {p.model_name} ({p.provider_type})</option>)}
               </select>
-              {savingSystemProvider && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+              {savingJudgeProvider && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Análise de prompts */}
+      <section className="flame-panel px-5 py-4">
+        <div className="flex items-start gap-3">
+          <div className="flame-icon-shell h-10 w-10 shrink-0 mt-0.5">
+            <Zap className="h-5 w-5 text-red-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-gray-900">Análise de prompts</h2>
+            <p className="text-sm text-gray-500 mt-0.5 mb-3">
+              Otimização de prompt, comparação de versões e geração de resumo de alterações. Recomendado: Sonnet.
+            </p>
+            <div className="flex items-center gap-3">
+              <select
+                className="flex-1 max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
+                value={analysisProviderId ?? ""}
+                onChange={e => handleSaveAnalysisProvider(e.target.value === "" ? null : Number(e.target.value))}
+                disabled={savingAnalysisProvider || loading}
+              >
+                <option value="">Primeiro disponível (automático)</option>
+                {providers.map(p => <option key={p.id} value={p.id}>{p.name} — {p.model_name} ({p.provider_type})</option>)}
+              </select>
+              {savingAnalysisProvider && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Utilitários */}
+      <section className="flame-panel px-5 py-4">
+        <div className="flex items-start gap-3">
+          <div className="flame-icon-shell h-10 w-10 shrink-0 mt-0.5">
+            <Zap className="h-5 w-5 text-red-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-gray-900">Utilitários</h2>
+            <p className="text-sm text-gray-500 mt-0.5 mb-3">
+              Tradução de motivos de score para PT-BR e sugestão de mapeamento no import de datasets. Pode usar modelos mais rápidos e baratos (ex: Haiku).
+            </p>
+            <div className="flex items-center gap-3">
+              <select
+                className="flex-1 max-w-sm rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none"
+                value={utilityProviderId ?? ""}
+                onChange={e => handleSaveUtilityProvider(e.target.value === "" ? null : Number(e.target.value))}
+                disabled={savingUtilityProvider || loading}
+              >
+                <option value="">Primeiro disponível (automático)</option>
+                {providers.map(p => <option key={p.id} value={p.id}>{p.name} — {p.model_name} ({p.provider_type})</option>)}
+              </select>
+              {savingUtilityProvider && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
             </div>
           </div>
         </div>

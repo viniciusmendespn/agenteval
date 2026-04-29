@@ -341,8 +341,11 @@ export const deleteWorkspace = (id: number) =>
   request<{ ok: boolean }>(`/workspaces/${id}`, { method: "DELETE" })
 
 export type WorkspaceSettings = {
-  chat_llm_provider_id: number | null
-  system_llm_provider_id: number | null
+  chat_llm_provider_id:     number | null
+  system_llm_provider_id:   number | null
+  judge_llm_provider_id:    number | null
+  analysis_llm_provider_id: number | null
+  utility_llm_provider_id:  number | null
 }
 export const getWorkspaceSettings = () => request<WorkspaceSettings>("/workspaces/settings")
 export const updateWorkspaceSettings = (data: WorkspaceSettings) =>

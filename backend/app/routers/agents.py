@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db, SessionLocal
 from ..models import Agent, TestRun, TestResult, AgentPromptVersion, PromptVersionComparison
 from ..schemas import AgentCreate, AgentOut, AgentPromptVersionOut
-from ..services.judge_llm import resolve_system_judge
+from ..services.judge_llm import resolve_task_judge
 from ..workspace import WorkspaceContext, get_current_workspace, require_writer
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -18,7 +18,7 @@ def _generate_change_summary(version_id: int, prev_prompt: str, new_prompt: str,
     """Background task: gera resumo LLM das diferenças entre duas versões do prompt."""
     db = SessionLocal()
     try:
-        judge = resolve_system_judge(db, workspace_id)
+        judge = resolve_task_judge(db, workspace_id, "analysis")
         if judge is None:
             return
         prompt = (
@@ -347,7 +347,7 @@ def compare_prompt_versions(
     summary = cached.summary if cached else None
 
     if summary is None:
-        judge = resolve_system_judge(db, workspace.workspace_id)
+        judge = resolve_task_judge(db, workspace.workspace_id, "analysis")
         if judge:
             try:
                 prompt = (
@@ -445,7 +445,7 @@ def optimize_prompt(
         '{"suggested_prompt": "...", "reasoning": "explicação das mudanças em 2-3 frases"}'
     )
 
-    judge = resolve_system_judge(db, workspace.workspace_id)
+    judge = resolve_task_judge(db, workspace.workspace_id, "analysis")
     if judge is None:
         raise HTTPException(503, "Nenhum provedor LLM configurado. Adicione um em Configurações → Provedores LLM.")
 

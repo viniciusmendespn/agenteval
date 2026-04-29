@@ -151,17 +151,35 @@ def resolve_judge(db, provider_id: Optional[int] = None) -> Optional[CustomJudge
     return get_judge_from_provider(provider)
 
 
-def resolve_system_judge(db, workspace_id: Optional[int] = None) -> Optional[CustomJudgeLLM]:
+_TASK_FIELD = {
+    "judge":    "judge_llm_provider_id",
+    "analysis": "analysis_llm_provider_id",
+    "utility":  "utility_llm_provider_id",
+}
+
+
+def resolve_task_judge(db, workspace_id: Optional[int], task: str) -> Optional[CustomJudgeLLM]:
     """
-    Resolve o judge para funcionalidades do sistema (optimize, compare, field mapper).
-    Prioridade: system_llm_provider_id do workspace → primeiro provider disponível.
+    Resolve provider para uma tarefa específica.
+    Prioridade: campo da task → system_llm_provider_id → primeiro disponível.
     """
     from ..models import LLMProvider, Workspace
     provider = None
     if workspace_id:
         ws = db.get(Workspace, workspace_id)
-        if ws and ws.system_llm_provider_id:
-            provider = db.get(LLMProvider, ws.system_llm_provider_id)
+        if ws:
+            field = _TASK_FIELD.get(task)
+            if field:
+                pid = getattr(ws, field, None)
+                if pid:
+                    provider = db.get(LLMProvider, pid)
+            if provider is None and ws.system_llm_provider_id:
+                provider = db.get(LLMProvider, ws.system_llm_provider_id)
     if provider is None:
         provider = db.query(LLMProvider).first()
     return get_judge_from_provider(provider)
+
+
+def resolve_system_judge(db, workspace_id: Optional[int] = None) -> Optional[CustomJudgeLLM]:
+    """Mantida para retrocompatibilidade — delega para task 'analysis'."""
+    return resolve_task_judge(db, workspace_id, "analysis")

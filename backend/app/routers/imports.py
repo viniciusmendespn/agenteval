@@ -17,7 +17,7 @@ from ..services.importer import (
     to_str,
 )
 from ..services.field_mapper import suggest_mapping
-from ..services.judge_llm import resolve_system_judge
+from ..services.judge_llm import resolve_task_judge
 
 router = APIRouter(prefix="/imports", tags=["imports"])
 
@@ -70,7 +70,7 @@ async def analyze_file(
     all_paths = extract_all_paths(records)
     sample = records[:3]
     file_id = save_tmp(records)
-    judge = resolve_system_judge(db, workspace.workspace_id)
+    judge = resolve_task_judge(db, workspace.workspace_id, "utility")
     suggestion = suggest_mapping(sample, all_paths, judge=judge)
 
     return {
