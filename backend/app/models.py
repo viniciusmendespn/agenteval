@@ -318,3 +318,47 @@ class WorkspaceMember(Base):
 
     workspace = relationship("Workspace")
     user = relationship("User")
+
+
+# ---------------------------------------------------------------------------
+# Simulation — conversa simulada entre LLM (usuário) e agente
+# ---------------------------------------------------------------------------
+
+class Simulation(Base):
+    __tablename__ = "simulations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, default=1, index=True)
+    agent_id = Column(Integer, ForeignKey("agents.id"), nullable=False)
+    name = Column(String, nullable=True)
+    instructions = Column(Text, nullable=True)
+    llm_provider_id = Column(Integer, ForeignKey("llm_providers.id"), nullable=True)
+    max_messages = Column(Integer, default=10)
+    message_interval_seconds = Column(Float, default=3.0)
+    status = Column(String, default="idle")  # idle|running|paused|completed|stopped|failed
+    task_id = Column(String, nullable=True)
+    session_id = Column(String, nullable=True)
+    total_turns = Column(Integer, default=0)
+    saved_dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    agent = relationship("Agent")
+    llm_provider = relationship("LLMProvider")
+    messages = relationship("SimulationMessage", back_populates="simulation", cascade="all, delete-orphan",
+                            order_by="SimulationMessage.turn_order")
+    saved_dataset = relationship("Dataset", foreign_keys=[saved_dataset_id])
+
+
+class SimulationMessage(Base):
+    __tablename__ = "simulation_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    simulation_id = Column(Integer, ForeignKey("simulations.id"), nullable=False, index=True)
+    role = Column(String, nullable=False)   # "simulator" | "agent"
+    content = Column(Text, nullable=False)
+    turn_order = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    simulation = relationship("Simulation", back_populates="messages")

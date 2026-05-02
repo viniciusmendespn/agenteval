@@ -3,9 +3,9 @@
 import { useState, useRef, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
-import { MessageSquare, X, Send, Bot, User, Loader2, CheckSquare, Square, Plus, Check } from "lucide-react"
+import { MessageSquare, X, Send, Bot, User, Loader2, CheckSquare, Square, Plus, Check, ClipboardList, Play } from "lucide-react"
 import { toast } from "sonner"
-import { API, workspaceHeaders, createTestCase } from "@/lib/api"
+import { API, workspaceHeaders, createTestCase, createSimulation } from "@/lib/api"
 
 type Message = {
   role: "user" | "assistant"
@@ -33,6 +33,25 @@ type AgentSelectorBlock = {
   agents: { id: number; name: string }[]
 }
 
+type ModeSelectorBlock = {
+  agent_id: number
+  agent_name: string
+}
+
+type SimulationSuggestion = {
+  title: string
+  persona: string
+  scenario: string
+  business_rule: string
+  instructions: string
+  tags?: string
+}
+
+type SimulationSuggestionsBlock = {
+  agent_id: number
+  cases: SimulationSuggestion[]
+}
+
 const TYPE_LABELS: Record<string, string> = {
   happy_path: "Fluxo feliz",
   edge_case: "Caso extremo",
@@ -51,7 +70,9 @@ const TYPE_COLORS: Record<string, string> = {
 
 type ParsedContent =
   | { type: "suggestions"; before: string; block: SuggestionsBlock; after: string }
+  | { type: "simulation_suggestions"; before: string; block: SimulationSuggestionsBlock; after: string }
   | { type: "agent_selector"; block: AgentSelectorBlock }
+  | { type: "mode_selector"; block: ModeSelectorBlock }
   | { type: "text"; content: string }
 
 function parseContent(content: string): ParsedContent {
@@ -62,11 +83,24 @@ function parseContent(content: string): ParsedContent {
     if (parsed.__type === "agent_selector" && Array.isArray(parsed.agents)) {
       return { type: "agent_selector", block: { agents: parsed.agents } }
     }
+    if (parsed.__type === "mode_selector" && parsed.agent_id) {
+      return { type: "mode_selector", block: { agent_id: parsed.agent_id, agent_name: parsed.agent_name } }
+    }
     if (parsed.__type === "test_case_suggestions" && Array.isArray(parsed.cases)) {
       const idx = content.indexOf("```json")
       const end = content.indexOf("```", idx + 7) + 3
       return {
         type: "suggestions",
+        before: content.slice(0, idx).trim(),
+        block: { agent_id: parsed.agent_id, cases: parsed.cases },
+        after: content.slice(end).trim(),
+      }
+    }
+    if (parsed.__type === "simulation_suggestions" && Array.isArray(parsed.cases)) {
+      const idx = content.indexOf("```json")
+      const end = content.indexOf("```", idx + 7) + 3
+      return {
+        type: "simulation_suggestions",
         before: content.slice(0, idx).trim(),
         block: { agent_id: parsed.agent_id, cases: parsed.cases },
         after: content.slice(end).trim(),
@@ -250,13 +284,180 @@ function SuggestionCards({ block }: { block: SuggestionsBlock }) {
   )
 }
 
+function ModeSelectorCards({ block, onSelect }: {
+  block: ModeSelectorBlock
+  onSelect: (mode: "test_cases" | "simulations") => void
+}) {
+  return (
+    <div className="mt-1 space-y-2">
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+        O que criar para <strong>{block.agent_name}</strong>?
+      </p>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          onClick={() => onSelect("test_cases")}
+          className="rounded-lg border border-gray-200 bg-white hover:border-[var(--santander-red)] hover:bg-red-50/30 p-3 text-left transition-colors"
+        >
+          <ClipboardList size={16} className="text-[var(--santander-red)] mb-1.5" />
+          <p className="font-semibold text-xs text-gray-800">Casos de Teste</p>
+          <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
+            Cenários pontuais com entrada e saída esperada, avaliados por métricas.
+          </p>
+        </button>
+        <button
+          onClick={() => onSelect("simulations")}
+          className="rounded-lg border border-gray-200 bg-white hover:border-[var(--santander-red)] hover:bg-red-50/30 p-3 text-left transition-colors"
+        >
+          <Play size={16} className="text-[var(--santander-red)] mb-1.5" />
+          <p className="font-semibold text-xs text-gray-800">Simulações</p>
+          <p className="text-[10px] text-gray-500 mt-0.5 leading-snug">
+            Uma IA age como usuário real e conversa com o agente autonomamente.
+          </p>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function SimulationSuggestionCards({ block }: { block: SimulationSuggestionsBlock }) {
+  const [selected, setSelected] = useState<Set<number>>(() => new Set(block.cases.map((_, i) => i)))
+  const [created, setCreated] = useState<Set<number>>(new Set())
+  const [creating, setCreating] = useState(false)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  function toggle(i: number) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      next.has(i) ? next.delete(i) : next.add(i)
+      return next
+    })
+  }
+
+  async function handleCreate(indices: number[]) {
+    const toCreate = indices.filter(i => !created.has(i))
+    if (!toCreate.length) return
+    setCreating(true)
+    setErrorMsg(null)
+    const failed: { index: number; reason: string }[] = []
+    let successCount = 0
+    for (const i of toCreate) {
+      const c = block.cases[i]
+      try {
+        await createSimulation({
+          agent_id: block.agent_id,
+          name: c.title,
+          instructions: c.instructions,
+          max_messages: 10,
+        })
+        setCreated(prev => new Set([...prev, i]))
+        successCount++
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
+        console.error(`[SimulationSuggestionCards] falha ao criar "${c.title}":`, reason)
+        failed.push({ index: i, reason })
+      }
+    }
+    setCreating(false)
+    if (successCount > 0 && failed.length === 0) {
+      toast.success(`${successCount} simulação${successCount > 1 ? "ões" : ""} criada${successCount > 1 ? "s" : ""} com sucesso`)
+      setTimeout(() => { window.location.href = "/simulations" }, 1200)
+    } else if (successCount > 0 && failed.length > 0) {
+      toast.success(`${successCount} criada${successCount > 1 ? "s" : ""}`)
+      setErrorMsg(`${failed.length} falharam: ${failed.map(f => f.reason).join("; ")}`)
+    } else {
+      const reason = failed[0]?.reason ?? "erro desconhecido"
+      setErrorMsg(`Falha ao criar: ${reason}`)
+      toast.error("Erro ao criar simulações")
+    }
+  }
+
+  const pendingSelected = [...selected].filter(i => !created.has(i))
+  const allIndices = block.cases.map((_, i) => i)
+  const pendingAll = allIndices.filter(i => !created.has(i))
+
+  return (
+    <div className="mt-2 space-y-1.5">
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">
+        {block.cases.length} cenários · selecione os que deseja criar
+      </p>
+
+      {block.cases.map((c, i) => {
+        const isSelected = selected.has(i)
+        const isCreated = created.has(i)
+
+        return (
+          <div
+            key={i}
+            onClick={() => !isCreated && toggle(i)}
+            className={`rounded-lg border p-2.5 cursor-pointer transition-colors text-xs ${
+              isCreated
+                ? "border-green-200 bg-green-50 cursor-default"
+                : isSelected
+                ? "border-[var(--santander-red)] bg-red-50/30"
+                : "border-gray-200 bg-white hover:border-gray-300"
+            }`}
+          >
+            <div className="flex items-start gap-2">
+              <div className="mt-0.5 shrink-0">
+                {isCreated
+                  ? <Check size={14} className="text-green-600" />
+                  : isSelected
+                  ? <CheckSquare size={14} className="text-[var(--santander-red)]" />
+                  : <Square size={14} className="text-gray-300" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                  <span className="font-semibold text-gray-800 leading-snug">{c.title}</span>
+                  {isCreated && <span className="text-[10px] text-green-600 font-medium">Criada ✓</span>}
+                </div>
+                <p className="text-[10px] text-gray-500 mb-0.5">
+                  <span className="font-medium text-gray-600">Persona: </span>{c.persona}
+                </p>
+                <p className="text-[10px] text-gray-500 mb-0.5 truncate">
+                  <span className="font-medium text-gray-600">Regra: </span>{c.business_rule}
+                </p>
+                {c.tags && (
+                  <p className="text-[10px] text-gray-400">{c.tags}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })}
+
+      {errorMsg && <p className="text-[11px] text-red-500 pt-1">{errorMsg}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => handleCreate(pendingSelected)}
+          disabled={creating || pendingSelected.length === 0}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-semibold rounded-lg bg-[var(--santander-red)] text-white hover:bg-[var(--santander-red-dark)] disabled:opacity-40 transition-colors"
+        >
+          <Plus size={12} />
+          {creating ? "Criando..." : `Criar selecionados (${pendingSelected.length})`}
+        </button>
+        {pendingAll.length > pendingSelected.length && (
+          <button
+            onClick={() => handleCreate(pendingAll)}
+            disabled={creating || pendingAll.length === 0}
+            className="flex-1 flex items-center justify-center gap-1 py-1.5 text-xs font-semibold rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >
+            Criar todos ({pendingAll.length})
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function FloatingChat() {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
       content:
-        "Olá! Sou seu assistente de QA. Posso sugerir casos de teste para seus agentes.\n\nDiga algo como **\"gerar casos de teste\"** e eu listo os agentes disponíveis para você escolher.",
+        "Olá! Posso criar **casos de teste** ou **simulações** para seus agentes.\n\nDiga **\"quero testar um agente\"** para começar.",
       timestamp: new Date(),
     },
   ])
@@ -267,11 +468,17 @@ export default function FloatingChat() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  useEffect(() => {
+    function handleOpenChat() { setOpen(true) }
+    window.addEventListener("open-floatingchat", handleOpenChat)
+    return () => window.removeEventListener("open-floatingchat", handleOpenChat)
+  }, [])
+
   const LOADING_STEPS = [
-    "Processando sua mensagem...",
-    "Consultando informações do agente...",
-    "Gerando cenários de teste com IA...",
-    "Estruturando casos com expected output...",
+    "Processando...",
+    "Consultando o agente...",
+    "Gerando cenários com IA...",
+    "Estruturando sugestões...",
     "Quase pronto...",
   ]
 
@@ -371,6 +578,33 @@ export default function FloatingChat() {
       .finally(() => { stopLoadingSteps(); setLoading(false) })
   }
 
+  function handleModeSelect(mode: "test_cases" | "simulations", agentId: number, agentName: string) {
+    // Texto exibido ao usuário no chat (humanizado)
+    const displayText = mode === "test_cases"
+      ? `Criar casos de teste para **${agentName}**`
+      : `Criar simulações para **${agentName}**`
+    // Texto enviado ao backend (detectável pelo fast path — sem acento em "simulacoes" para evitar encoding)
+    const apiText = mode === "test_cases"
+      ? `Criar casos de teste para ${agentName} (ID: ${agentId})`
+      : `Criar simulacoes para ${agentName} (ID: ${agentId})`
+
+    const userMsg: Message = { role: "user", content: displayText, timestamp: new Date() }
+    // O histórico enviado ao backend usa apiText para o fast path detectar corretamente
+    const apiMessages = [...messages, { role: "user" as const, content: apiText }]
+    setMessages(prev => [...prev, userMsg])
+    setLoading(true)
+    startLoadingSteps()
+    fetch(`${API}/chat/`, {
+      method: "POST",
+      headers: workspaceHeaders(),
+      body: JSON.stringify({ messages: apiMessages.map(m => ({ role: m.role, content: m.content })) }),
+    })
+      .then(res => res.ok ? res.json() : res.text().then(t => { throw new Error(t) }))
+      .then(data => setMessages(prev => [...prev, { role: "assistant", content: data.reply, timestamp: new Date(), tokens: data.tokens ?? undefined }]))
+      .catch(err => setMessages(prev => [...prev, { role: "assistant", content: `Erro: ${err instanceof Error ? err.message : String(err)}`, timestamp: new Date() }]))
+      .finally(() => { stopLoadingSteps(); setLoading(false) })
+  }
+
   function renderMarkdown(text: string) {
     return (
       <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-headings:my-1 prose-code:text-xs">
@@ -399,11 +633,28 @@ export default function FloatingChat() {
     if (parsed.type === "agent_selector") {
       return <AgentSelectorCards block={parsed.block} onSelect={handleAgentSelect} />
     }
+    if (parsed.type === "mode_selector") {
+      return (
+        <ModeSelectorCards
+          block={parsed.block}
+          onSelect={(mode) => handleModeSelect(mode, parsed.block.agent_id, parsed.block.agent_name)}
+        />
+      )
+    }
     if (parsed.type === "suggestions") {
       return (
         <>
           {parsed.before && renderMarkdown(parsed.before)}
           <SuggestionCards block={parsed.block} />
+          {parsed.after && <div className="mt-2">{renderMarkdown(parsed.after)}</div>}
+        </>
+      )
+    }
+    if (parsed.type === "simulation_suggestions") {
+      return (
+        <>
+          {parsed.before && renderMarkdown(parsed.before)}
+          <SimulationSuggestionCards block={parsed.block} />
           {parsed.after && <div className="mt-2">{renderMarkdown(parsed.after)}</div>}
         </>
       )

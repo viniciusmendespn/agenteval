@@ -14,6 +14,7 @@ const LABELS: Record<string, string> = {
   "/profiles": "Perfil de avaliação",
   "/runs": "Execução",
   "/workspaces": "Workspace",
+  "/simulations": "Simulação",
 }
 
 interface Props {

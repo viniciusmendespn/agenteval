@@ -1,6 +1,7 @@
-from .executors import execute_run_core, execute_evaluation_core
+from .executors import execute_run_core, execute_evaluation_core, execute_simulation_core
 
 TASK_REGISTRY: dict = {
     "execute_run": execute_run_core,
     "execute_evaluation": execute_evaluation_core,
+    "execute_simulation": execute_simulation_core,
 }

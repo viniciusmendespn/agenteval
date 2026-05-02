@@ -8,6 +8,7 @@ from sqlalchemy import text, inspect
 from .database import engine, Base, SessionLocal
 from .routers import agents, test_cases, profiles, runs, imports, datasets, dataset_evaluations, workspaces
 from .routers import analytics, chat, llm_providers, evaluations as evaluations_router, guardrails as guardrails_router
+from .routers import simulations as simulations_router
 from .workspace import ensure_user
 
 Base.metadata.create_all(bind=engine)
@@ -283,6 +284,38 @@ def _migrate():
             conn.execute(text("ALTER TABLE llm_providers ADD COLUMN ssl_verify BOOLEAN NOT NULL DEFAULT 0"))
         conn.execute(text("UPDATE llm_providers SET ssl_verify = 0 WHERE ssl_verify IS NULL OR ssl_verify = 1"))
 
+        # Tabelas de simulação
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS simulations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                workspace_id INTEGER NOT NULL DEFAULT 1,
+                agent_id INTEGER NOT NULL REFERENCES agents(id),
+                name TEXT,
+                instructions TEXT,
+                llm_provider_id INTEGER REFERENCES llm_providers(id),
+                max_messages INTEGER DEFAULT 10,
+                message_interval_seconds REAL DEFAULT 3.0,
+                status TEXT DEFAULT 'idle',
+                task_id TEXT,
+                session_id TEXT,
+                total_turns INTEGER DEFAULT 0,
+                saved_dataset_id INTEGER REFERENCES datasets(id),
+                created_at DATETIME,
+                started_at DATETIME,
+                completed_at DATETIME
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS simulation_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                simulation_id INTEGER NOT NULL REFERENCES simulations(id),
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                turn_order INTEGER NOT NULL,
+                created_at DATETIME
+            )
+        """))
+
         conn.commit()
 
 _migrate()
@@ -409,8 +442,8 @@ _seed_guardrails()
 
 
 def _recover_stuck_runs():
-    """Marca como 'failed' qualquer run/avaliação que ficou presa como 'running' após um restart."""
-    from .models import TestRun, DatasetEvaluation, Evaluation
+    """Marca como 'failed' qualquer run/avaliação/simulação presa como 'running' após restart."""
+    from .models import TestRun, DatasetEvaluation, Evaluation, Simulation
     db = SessionLocal()
     try:
         stuck_runs = db.query(TestRun).filter(TestRun.status == "running").all()
@@ -422,7 +455,10 @@ def _recover_stuck_runs():
         stuck_unified = db.query(Evaluation).filter(Evaluation.status == "running").all()
         for e in stuck_unified:
             e.status = "failed"
-        if stuck_runs or stuck_evals or stuck_unified:
+        stuck_sims = db.query(Simulation).filter(Simulation.status == "running").all()
+        for s in stuck_sims:
+            s.status = "failed"
+        if stuck_runs or stuck_evals or stuck_unified or stuck_sims:
             db.commit()
     finally:
         db.close()
@@ -457,6 +493,7 @@ app.include_router(evaluations_router.router)
 app.include_router(chat.router)
 app.include_router(llm_providers.router)
 app.include_router(guardrails_router.router)
+app.include_router(simulations_router.router)
 
 
 @app.get("/health")

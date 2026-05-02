@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   MessageSquare,
   Play,
+  PlayCircle,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
@@ -45,6 +46,7 @@ const sections = [
     items: [
       { href: "/test-cases", label: "Casos de Teste", icon: FlaskConical },
       { href: "/runs", label: "Execuções", icon: Play },
+      { href: "/simulations", label: "Simulações", icon: PlayCircle },
     ],
   },
   {

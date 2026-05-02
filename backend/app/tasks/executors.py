@@ -7,10 +7,11 @@ from ..database import SessionLocal
 from ..models import (
     Agent, EvaluationProfile, TestCase, TestRun, TestResult,
     Dataset, DatasetRecord, DatasetEvaluation, DatasetResult, Evaluation, Guardrail,
+    Simulation, SimulationMessage,
 )
 from ..services.agent_caller import call_agent
 from ..services.evaluator import evaluate_response, compute_passed, LOWER_IS_BETTER
-from ..services.judge_llm import resolve_judge, resolve_task_judge
+from ..services.judge_llm import resolve_judge, resolve_task_judge, get_judge_from_provider
 
 
 def _resolve_judge(db, profile, workspace_id):
@@ -331,6 +332,170 @@ def execute_evaluation_core(eval_id: int):
                 db.commit()
             _sync_evaluation(db, source_eval_id=eval_id,
                              status="failed", overall_score=None, completed_at=datetime.utcnow())
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+# ── Simulation ────────────────────────────────────────────────────────────────
+
+def execute_simulation_core(simulation_id: int):
+    from ..services.simulator import ConversationSimulator
+    db: Session = SessionLocal()
+    sim = None
+    try:
+        sim = db.get(Simulation, simulation_id)
+        if not sim:
+            return
+
+        agent = db.get(Agent, sim.agent_id)
+        if not agent:
+            sim.status = "failed"
+            db.commit()
+            return
+
+        # Resolve judge
+        if sim.llm_provider_id:
+            from ..models import LLMProvider
+            provider = db.get(LLMProvider, sim.llm_provider_id)
+            judge = get_judge_from_provider(provider)
+        else:
+            judge = resolve_task_judge(db, sim.workspace_id, "judge")
+
+        if judge is None:
+            logger.error("Simulation %d: nenhum LLM provider disponível", simulation_id)
+            sim.status = "failed"
+            db.commit()
+            return
+
+        simulator = ConversationSimulator(judge, {
+            "name": agent.name,
+            "system_prompt": agent.system_prompt or "",
+        })
+
+        # session_id fixo por simulação
+        if not sim.session_id:
+            sim.session_id = str(uuid.uuid4())
+
+        sim.status = "running"
+        sim.started_at = sim.started_at or datetime.utcnow()
+        db.commit()
+
+        logger.info("Simulation %d started (session=%s)", simulation_id, sim.session_id)
+
+        _call_kwargs = dict(
+            url=agent.url,
+            api_key=agent.api_key,
+            request_body=agent.request_body or '{"message": "{{message}}"}',
+            output_field=agent.output_field,
+            connection_type=agent.connection_type,
+            session_id=sim.session_id,
+            variables={},
+            token_url=getattr(agent, "token_url", None),
+            token_request_body=getattr(agent, "token_request_body", None),
+            token_output_field=getattr(agent, "token_output_field", None),
+            token_header_name=getattr(agent, "token_header_name", None),
+            system_prompt=agent.system_prompt or "",
+            ssl_verify=getattr(agent, "ssl_verify", False) or False,
+        )
+
+        while True:
+            db.refresh(sim)
+            if sim.status in ("paused", "stopped"):
+                break
+            if sim.total_turns >= sim.max_messages:
+                break
+
+            existing_msgs = (
+                db.query(SimulationMessage)
+                .filter(SimulationMessage.simulation_id == simulation_id)
+                .order_by(SimulationMessage.turn_order)
+                .all()
+            )
+            next_turn_order = len(existing_msgs) + 1
+            history = [{"role": m.role, "content": m.content} for m in existing_msgs]
+
+            # Gera mensagem do simulador
+            try:
+                if not history:
+                    user_msg = simulator.generate_first_message(sim.instructions or "")
+                else:
+                    user_msg = simulator.generate_next_message(sim.instructions or "", history)
+            except Exception as e:
+                logger.error("Simulation %d: error generating message: %s", simulation_id, e)
+                sim.status = "failed"
+                db.commit()
+                return
+
+            sim_msg = SimulationMessage(
+                simulation_id=simulation_id,
+                role="simulator",
+                content=user_msg,
+                turn_order=next_turn_order,
+                created_at=datetime.utcnow(),
+            )
+            db.add(sim_msg)
+            db.commit()
+
+            # Chama agente
+            try:
+                agent_response = call_agent(message=user_msg, **_call_kwargs)
+            except Exception as e:
+                logger.error("Simulation %d: agent call error: %s", simulation_id, e)
+                agent_msg = SimulationMessage(
+                    simulation_id=simulation_id,
+                    role="agent",
+                    content=f"[Erro: {e}]",
+                    turn_order=next_turn_order + 1,
+                    created_at=datetime.utcnow(),
+                )
+                db.add(agent_msg)
+                sim.total_turns += 1
+                sim.status = "failed"
+                db.commit()
+                return
+
+            agent_msg = SimulationMessage(
+                simulation_id=simulation_id,
+                role="agent",
+                content=agent_response,
+                turn_order=next_turn_order + 1,
+                created_at=datetime.utcnow(),
+            )
+            db.add(agent_msg)
+            sim.total_turns += 1
+            db.commit()
+
+            logger.debug("Simulation %d turn %d complete", simulation_id, sim.total_turns)
+
+            # Aguarda intervalo com checks a cada 0.5s para permitir pause durante espera
+            interval = sim.message_interval_seconds or 3.0
+            elapsed = 0.0
+            while elapsed < interval:
+                time.sleep(0.5)
+                elapsed += 0.5
+                db.refresh(sim)
+                if sim.status in ("paused", "stopped"):
+                    break
+
+            if sim.status in ("paused", "stopped"):
+                break
+
+        db.refresh(sim)
+        if sim.status == "running":
+            sim.status = "completed"
+            sim.completed_at = datetime.utcnow()
+            db.commit()
+            logger.info("Simulation %d completed (%d turns)", simulation_id, sim.total_turns)
+
+    except Exception:
+        logger.exception("Unexpected error in simulation %d", simulation_id)
+        try:
+            if sim:
+                db.refresh(sim)
+                sim.status = "failed"
+                db.commit()
         except Exception:
             pass
     finally:

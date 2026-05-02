@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
-import { FlaskConical, Loader2, Plus, Search } from "lucide-react"
+import { FlaskConical, Loader2, Plus, Search, Bot } from "lucide-react"
 import { motion } from "framer-motion"
 import { getTestCases, type TestCase } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
@@ -69,6 +69,19 @@ export default function TestCasesPage() {
           <Plus className="h-4 w-4" />
           Novo caso
         </Link>
+      </div>
+
+      <div className="mb-5 flex items-center gap-3 rounded-lg border border-[var(--flame-teal)]/20 bg-[var(--flame-teal)]/5 px-4 py-3">
+        <Bot className="h-5 w-5 shrink-0 text-[var(--flame-teal)]" />
+        <p className="flex-1 text-sm text-gray-600">
+          Use o <strong>Assistente de QA</strong> para gerar casos de teste automaticamente com IA, focados nas regras de negócio do seu agente.
+        </p>
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent("open-floatingchat"))}
+          className="shrink-0 rounded-lg border border-[var(--flame-teal)] px-3 py-1.5 text-xs font-semibold text-[var(--flame-teal)] hover:bg-[var(--flame-teal)] hover:text-white transition-colors"
+        >
+          Abrir assistente
+        </button>
       </div>
 
       {!loading && cases.length > 0 && (

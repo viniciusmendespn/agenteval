@@ -593,6 +593,66 @@ export const getAgentTimeline = (agentId: number) =>
 export const getDatasetTimeline = (datasetId: number) =>
   request<TimelineData>(`/analytics/timeline/datasets/${datasetId}`)
 
+// --- Simulations ---
+
+export type SimulationMessage = {
+  id: number
+  simulation_id: number
+  role: "simulator" | "agent"
+  content: string
+  turn_order: number
+  created_at: string
+}
+
+export type Simulation = {
+  id: number
+  workspace_id: number
+  agent_id: number
+  agent_name?: string | null
+  name?: string | null
+  instructions?: string | null
+  llm_provider_id?: number | null
+  max_messages: number
+  message_interval_seconds: number
+  status: "idle" | "running" | "paused" | "completed" | "stopped" | "failed"
+  total_turns: number
+  saved_dataset_id?: number | null
+  created_at: string
+  started_at?: string | null
+  completed_at?: string | null
+  messages: SimulationMessage[]
+}
+
+export const getSimulations = () => request<Simulation[]>("/simulations/")
+export const getSimulation = (id: number) => request<Simulation>(`/simulations/${id}`)
+export const createSimulation = (data: {
+  agent_id: number
+  name?: string
+  instructions?: string
+  llm_provider_id?: number | null
+  max_messages?: number
+  message_interval_seconds?: number
+}) => request<Simulation>("/simulations/", { method: "POST", body: JSON.stringify(data) })
+export const updateSimulation = (id: number, data: {
+  name?: string
+  instructions?: string
+  llm_provider_id?: number | null
+  max_messages?: number
+  message_interval_seconds?: number
+}) => request<Simulation>(`/simulations/${id}`, { method: "PATCH", body: JSON.stringify(data) })
+export const deleteSimulation = (id: number) =>
+  request<void>(`/simulations/${id}`, { method: "DELETE" })
+export const startSimulation = (id: number) =>
+  request<Simulation>(`/simulations/${id}/start`, { method: "POST" })
+export const pauseSimulation = (id: number) =>
+  request<Simulation>(`/simulations/${id}/pause`, { method: "POST" })
+export const stopSimulation = (id: number) =>
+  request<Simulation>(`/simulations/${id}/stop`, { method: "POST" })
+export const resetSimulation = (id: number) =>
+  request<Simulation>(`/simulations/${id}/reset`, { method: "POST" })
+export const saveSimulationAsDataset = (id: number) =>
+  request<{ dataset_id: number }>(`/simulations/${id}/save-as-dataset`, { method: "POST" })
+
 export const getAnalyticsOverview = () => request<AnalyticsOverview>("/analytics/overview")
 export const getRunBreakdown = (runId: number) => request<RunBreakdown>(`/analytics/runs/${runId}/breakdown`)
 export const compareRuns = (runIdA: number, runIdB: number) =>

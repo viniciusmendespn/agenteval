@@ -1,8 +1,9 @@
 """
 Router /chat — assistente conversacional com function calling (Fusion API).
-Permite criar agentes, perfis, casos de teste, iniciar runs e consultar o sistema.
+Permite criar agentes, perfis, casos de teste, simulações, iniciar runs e consultar o sistema.
 """
 import json
+import re as _re
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from openai import AzureOpenAI, OpenAI
@@ -17,41 +18,36 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 # ── System prompt ────────────────────────────────────────────────────────────
 
-SYSTEM_PROMPT_BASE = """Você é um assistente especialista em Quality Assurance para agentes de IA no Santander AgentEval.
-Sua missão principal é ajudar o usuário a criar casos de teste profissionais e abrangentes.
+SYSTEM_PROMPT_BASE = """Você é um assistente de QA no Santander AgentEval.
 
-Regras gerais:
-- Responda SEMPRE em português, de forma direta e objetiva.
-- Respostas curtas. Sem introduções longas, sem resumos desnecessários.
-- Ao mencionar páginas do sistema, use SEMPRE links markdown clicáveis. Exemplos: [Ver execução #20](/runs/20), [Agentes](/agents). Nunca escreva o caminho como texto simples.
+Regras INEGOCIÁVEIS de resposta:
+- SEMPRE em português.
+- MÁXIMO 2 frases por resposta de texto. Sem introduções, sem resumos, sem "claro!", sem "ótimo!".
+- Links markdown para páginas: [Casos de Teste](/test-cases), [Simulações](/simulations), [Runs](/runs).
 - hallucination/toxicity/bias: score 0 = ótimo (lower-is-better).
 
-AGENTES CADASTRADOS (use estes dados diretamente — NÃO chame list_agents):
+AGENTES CADASTRADOS (use diretamente — NÃO chame list_agents):
 {agents_list}
 
-REGRA CRÍTICA — Sugestão de casos de teste:
-NUNCA gere casos de teste manualmente em texto livre. SEMPRE chame a tool `suggest_test_cases` — ela usa IA especializada para gerar os casos com a estrutura correta (título, tipo, expected_output, context, tags, turns).
+FOCO EM REGRAS DE NEGÓCIO (obrigatório ao gerar cenários):
+Pense em: fluxos de aprovação/recusa, portabilidade, cancelamento, perfis reais de cliente (idoso,
+negativado, primeiro emprego), casos de borda nos processos (prazo vencido, documentação incompleta),
+escapes de escopo. NUNCA gere cenários sobre: formato inválido, campo vazio, validação de CPF/dados.
 
-Fluxo OBRIGATÓRIO quando o usuário pedir sugestões ou quiser testar um agente:
-1. Se o usuário mandar uma mensagem no formato "Agente selecionado: <nome> (ID: <id>)": chame IMEDIATAMENTE `suggest_test_cases` com esse agent_id, sem perguntar mais nada.
-2. Se o agente já estiver identificado de outra forma: chame `suggest_test_cases` com o agent_id correto.
-   - Se o resultado retornar `needs_context: true`, então pergunte ao usuário pelo contexto/instruções do agente.
-   - Se o usuário fornecer contexto, chame `suggest_test_cases` novamente com `agent_context` preenchido.
-3. Após a tool retornar os cenários com sucesso, inclua NO SEU RESPONSE o bloco JSON abaixo EXATAMENTE neste formato (sem alterar os dados retornados):
-
-Aqui estão X sugestões de casos de teste para **[Nome do Agente]**:
-
-```json
-{"__type":"test_case_suggestions","agent_id":<id>,"cases":[<array EXATO retornado pela tool, sem modificar>]}
-```
-
-Selecione os casos que deseja criar.
-
-4. NÃO crie casos automaticamente. Use `create_test_case` SOMENTE quando o usuário pedir explicitamente.
-5. Para outras ações (criar perfis, iniciar runs, etc.), ajude normalmente.
+REGRA CRÍTICA: Use SEMPRE `suggest_test_cases` ou `suggest_simulations`. Nunca gere cenários em texto livre.
+- Se o usuário pedir casos de teste via texto: identifique o agente e chame `suggest_test_cases`.
+- Se o usuário pedir simulações via texto: identifique o agente e chame `suggest_simulations`.
+- Após a tool retornar cenários, inclua o JSON no formato:
+  ```json
+  {"__type":"test_case_suggestions","agent_id":<id>,"cases":[...]}
+  ```
+  ou
+  ```json
+  {"__type":"simulation_suggestions","agent_id":<id>,"cases":[...]}
+  ```
+- NÃO crie nada automaticamente. Use `create_test_case` SOMENTE quando o usuário pedir explicitamente.
 
 Defaults ao criar agente: connection_type=http, request_body={"message":"{{message}}"}, output_field=response.
-Defaults ao criar perfil: relevancy ON (threshold 0.7), demais métricas OFF.
 """
 
 
@@ -234,6 +230,22 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_simulations",
+            "description": "Gera sugestões de cenários de simulação de conversa para um agente, focados em regras de negócio. Cada cenário vira uma simulação onde uma IA age como usuário real. Use quando o usuário quiser simular conversas com o agente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "agent_id": {"type": "integer", "description": "ID do agente"},
+                    "agent_context": {"type": "string", "description": "Contexto adicional se o agente não tiver system prompt cadastrado."},
+                    "n_scenarios": {"type": "integer", "description": "Número de cenários a gerar (padrão: 5)."},
+                },
+                "required": ["agent_id"],
+            },
+        },
+    },
 ]
 
 # ── Implementação das tools ───────────────────────────────────────────────────
@@ -262,6 +274,8 @@ def _run_tool(name: str, args: dict, db: Session, workspace_id: int, client, mod
             return _tool_get_agent_timeline(args, db, workspace_id)
         if name == "suggest_test_cases":
             return _tool_suggest_test_cases(args, db, workspace_id, client, model)
+        if name == "suggest_simulations":
+            return _tool_suggest_simulations(args, db, workspace_id, client, model)
         return f"Tool desconhecida: {name}"
     except Exception as e:
         return f"Erro ao executar {name}: {str(e)}"
@@ -506,10 +520,12 @@ def _tool_get_agent_timeline(args: dict, db: Session, workspace_id: int) -> str:
 
 def _generate_test_scenarios(agent_name: str, context: str, n: int, client, model: str) -> list:
     """Chama o LLM para gerar n casos de teste ricos para o agente."""
-    import re as _re
     prompt = (
         f'Crie {n} casos de teste para o agente "{agent_name}".\n\n'
         f"Contexto/instruções do agente:\n{context}\n\n"
+        "FOCO OBRIGATÓRIO em regras de negócio: fluxos de aprovação/recusa, portabilidade, cancelamento, "
+        "perfis reais de cliente (idoso, negativado, primeiro emprego), prazos, documentação incompleta, escapes de escopo.\n"
+        "NUNCA crie cenários sobre: formato inválido, campo obrigatório vazio, validação técnica de CPF/dados.\n\n"
         f'Retorne JSON com chave "scenarios": array de exatamente {n} objetos, cada um com:\n'
         '- "title": título descritivo do caso\n'
         '- "type": "happy_path" | "edge_case" | "scope_escape" | "ambiguity" | "error"\n'
@@ -569,6 +585,92 @@ def _tool_suggest_test_cases(args: dict, db: Session, workspace_id: int, client,
         "agent_name": agent.name,
         "cases": scenarios,
     }, ensure_ascii=False)
+
+
+def _generate_simulation_scenarios(agent_name: str, context: str, n: int, client, model: str) -> list:
+    """Chama o LLM para gerar n cenários de simulação com personas e instruções."""
+    prompt = (
+        f'Crie {n} cenários de simulação de conversa para o agente "{agent_name}".\n\n'
+        f"Instruções/sistema do agente:\n{context}\n\n"
+        "FOCO EXCLUSIVO em regras de negócio: aprovação/recusa, portabilidade, cancelamento, "
+        "perfis reais de cliente com situações distintas (idoso sem letramento digital, cliente negativado, "
+        "recém-admitido, urgência alta, documentação incompleta, recusa parcial).\n"
+        "NUNCA crie cenários sobre: formato inválido, campo vazio, validação técnica.\n\n"
+        f'Retorne JSON com chave "scenarios": array de exatamente {n} objetos, cada um com:\n'
+        '- "title": título curto e descritivo do cenário\n'
+        '- "persona": nome fictício, idade, perfil e contexto em 1 frase (ex: "Maria, 68 anos, aposentada do INSS, baixo letramento digital")\n'
+        '- "scenario": situação de negócio sendo testada em 1 frase\n'
+        '- "business_rule": qual regra de negócio específica este cenário valida\n'
+        '- "instructions": instruções completas em pt-BR para o simulador agir como essa persona. '
+        'Deve incluir: quem é, o que quer, como age emocionalmente, quais perguntas faz, como reage a respostas do agente. Mínimo 3 frases.\n'
+        '- "tags": tags separadas por vírgula\n\n'
+        "Varie personas em: idade, grau de letramento digital, estado emocional, nível de urgência.\n"
+        "Retorne APENAS o JSON válido, sem markdown."
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = resp.choices[0].message.content.strip()
+        m = _re.search(r'\{.*\}', content, _re.DOTALL)
+        if m:
+            data = json.loads(m.group())
+            return data.get("scenarios", [])[:n]
+    except Exception:
+        pass
+    return []
+
+
+def _tool_suggest_simulations(args: dict, db: Session, workspace_id: int, client, model: str) -> str:
+    agent = db.query(Agent).filter(Agent.id == args["agent_id"], Agent.workspace_id == workspace_id).first()
+    if not agent:
+        return json.dumps({"error": f"Agente ID {args['agent_id']} não encontrado."}, ensure_ascii=False)
+
+    agent_context = args.get("agent_context", "")
+    context = ""
+    if agent.system_prompt:
+        context = agent.system_prompt
+        if agent_context:
+            context += f"\n\nContexto adicional:\n{agent_context}"
+    elif agent_context:
+        context = agent_context
+    else:
+        return json.dumps({
+            "needs_context": True,
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+        }, ensure_ascii=False)
+
+    n = args.get("n_scenarios", 5)
+    scenarios = _generate_simulation_scenarios(agent.name, context, n, client, model)
+    if not scenarios:
+        return json.dumps({"error": "Não foi possível gerar cenários. Verifique se o LLM judge está configurado."}, ensure_ascii=False)
+
+    return json.dumps({
+        "agent_id": agent.id,
+        "agent_name": agent.name,
+        "cases": scenarios,
+    }, ensure_ascii=False)
+
+
+# ── Fast path helpers ─────────────────────────────────────────────────────────
+
+def _parse_agent_selection(msg: str):
+    """Detecta 'Agente selecionado: X (ID: Y)' → (agent_id, agent_name) ou None."""
+    m = _re.match(r'Agente selecionado: (.+?) \(ID: (\d+)\)', msg)
+    return (int(m.group(2)), m.group(1)) if m else None
+
+
+def _parse_mode_choice(msg: str):
+    """Detecta 'Criar X para Y (ID: Z)' → ('test_cases'|'simulations', agent_id, agent_name) ou None."""
+    m = _re.match(r'Criar casos de teste para (.+?) \(ID: (\d+)\)', msg)
+    if m:
+        return ('test_cases', int(m.group(2)), m.group(1))
+    m = _re.match(r'Criar simulacoes para (.+?) \(ID: (\d+)\)', msg)
+    if m:
+        return ('simulations', int(m.group(2)), m.group(1))
+    return None
 
 
 # ── Endpoint principal ────────────────────────────────────────────────────────
@@ -776,20 +878,25 @@ def _resolve_chat_client(db: Session, workspace: WorkspaceContext):
     return client, provider.model_name
 
 
-_KEYWORDS_TEST_CASES = [
+_KEYWORDS_TESTING = [
+    # casos de teste
     "casos de teste", "caso de teste", "gerar casos", "criar casos",
     "sugerir casos", "sugestão de casos", "sugestões de casos",
     "quero testar", "criar testes", "gerar testes", "teste para",
     "testes para", "testar agente", "me ajude a testar",
+    # simulações
+    "simulação", "simulações", "simular", "criar simulação",
+    "gerar simulação", "quero simular", "simular agente",
+    "testar com simulação", "testar agente",
 ]
 
 
 def _should_show_agent_selector(messages: list[ChatMessage], agents: list) -> bool:
-    """Returns True if user is asking about test cases without specifying an agent."""
+    """Returns True if user is asking about testing/simulations without specifying an agent."""
     if not messages or messages[-1].role != "user":
         return False
     text = messages[-1].content.lower()
-    if not any(kw in text for kw in _KEYWORDS_TEST_CASES):
+    if not any(kw in text for kw in _KEYWORDS_TESTING):
         return False
     # If user already named an agent or passed an agent_id, let LLM handle it
     for agent in agents:
@@ -807,16 +914,54 @@ def chat(
     workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
     agents = db.query(Agent).filter(Agent.workspace_id == workspace.workspace_id).all()
+    last_msg = body.messages[-1].content if body.messages and body.messages[-1].role == "user" else ""
 
-    # Fast path: intercept test-case requests and return agent selector immediately (no LLM call)
+    # Fast path 1: keyword sobre teste/simulação → agent_selector (sem LLM)
     if _should_show_agent_selector(body.messages, agents):
         if not agents:
-            return ChatResponse(reply="Nenhum agente cadastrado ainda. [Crie um agente](/agents) primeiro.", tokens=0)
+            return ChatResponse(reply="Nenhum agente cadastrado. [Crie um](/agents) primeiro.", tokens=0)
         selector = json.dumps(
             {"__type": "agent_selector", "agents": [{"id": a.id, "name": a.name} for a in agents]},
             ensure_ascii=False,
         )
         return ChatResponse(reply=f"```json\n{selector}\n```", tokens=0)
+
+    # Fast path 2: "Agente selecionado: X (ID: Y)" → mode_selector (sem LLM)
+    selection = _parse_agent_selection(last_msg)
+    if selection:
+        agent_id, agent_name = selection
+        block = json.dumps(
+            {"__type": "mode_selector", "agent_id": agent_id, "agent_name": agent_name},
+            ensure_ascii=False,
+        )
+        return ChatResponse(reply=f"```json\n{block}\n```", tokens=0)
+
+    # Fast path 3+4: modo escolhido → gerar sugestões (chama LLM para geração)
+    mode_choice = _parse_mode_choice(last_msg)
+    if mode_choice:
+        mode, agent_id, agent_name = mode_choice
+        client, model = _resolve_chat_client(db, workspace)
+        if mode == "test_cases":
+            result = json.loads(_tool_suggest_test_cases({"agent_id": agent_id}, db, workspace.workspace_id, client, model))
+            if result.get("needs_context") or result.get("error"):
+                msg = f"**{agent_name}** não tem system prompt cadastrado. Descreva como ele funciona para gerar os casos."
+                return ChatResponse(reply=msg, tokens=0)
+            block = json.dumps(
+                {"__type": "test_case_suggestions", "agent_id": agent_id, "cases": result["cases"]},
+                ensure_ascii=False,
+            )
+            reply = f"5 sugestões de casos de teste para **{agent_name}**:\n\n```json\n{block}\n```\n\nSelecione os que deseja criar."
+        else:
+            result = json.loads(_tool_suggest_simulations({"agent_id": agent_id}, db, workspace.workspace_id, client, model))
+            if result.get("needs_context") or result.get("error"):
+                msg = f"**{agent_name}** não tem system prompt cadastrado. Descreva como ele funciona para gerar os cenários."
+                return ChatResponse(reply=msg, tokens=0)
+            block = json.dumps(
+                {"__type": "simulation_suggestions", "agent_id": agent_id, "cases": result["cases"]},
+                ensure_ascii=False,
+            )
+            reply = f"5 cenários de simulação para **{agent_name}**:\n\n```json\n{block}\n```\n\nSelecione os que deseja criar."
+        return ChatResponse(reply=reply, tokens=0)
 
     client, model = _resolve_chat_client(db, workspace)
 

@@ -366,3 +366,53 @@ class WorkspaceSettingsPatch(BaseModel):
     judge_llm_provider_id:    Optional[int] = None
     analysis_llm_provider_id: Optional[int] = None
     utility_llm_provider_id:  Optional[int] = None
+
+
+# --- Simulation ---
+
+class SimulationCreate(BaseModel):
+    agent_id: int
+    name: Optional[str] = None
+    instructions: Optional[str] = None
+    llm_provider_id: Optional[int] = None
+    max_messages: int = 10
+    message_interval_seconds: float = 3.0
+
+class SimulationUpdate(BaseModel):
+    name: Optional[str] = None
+    instructions: Optional[str] = None
+    llm_provider_id: Optional[int] = None
+    max_messages: Optional[int] = None
+    message_interval_seconds: Optional[float] = None
+
+class SimulationMessageOut(BaseModel):
+    id: int
+    simulation_id: int
+    role: str
+    content: str
+    turn_order: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class SimulationOut(BaseModel):
+    id: int
+    workspace_id: int
+    agent_id: int
+    agent_name: Optional[str] = None
+    name: Optional[str] = None
+    instructions: Optional[str] = None
+    llm_provider_id: Optional[int] = None
+    max_messages: int
+    message_interval_seconds: float
+    status: str
+    total_turns: int
+    saved_dataset_id: Optional[int] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    messages: list[SimulationMessageOut] = []
+
+    class Config:
+        from_attributes = True
