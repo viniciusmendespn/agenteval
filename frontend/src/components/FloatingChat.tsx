@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import { MessageSquare, X, Send, Bot, User, Loader2, CheckSquare, Square, Plus, Check, ClipboardList, Play } from "lucide-react"
 import { toast } from "sonner"
-import { API, workspaceHeaders, createTestCase, createSimulation } from "@/lib/api"
+import { API, workspaceHeaders, createTestCase, createSimulation, getAgents } from "@/lib/api"
 
 type Message = {
   role: "user" | "assistant"
@@ -451,22 +451,40 @@ function SimulationSuggestionCards({ block }: { block: SimulationSuggestionsBloc
   )
 }
 
+function buildAgentSelectorMessage(agents: { id: number; name: string }[]): Message {
+  const block = JSON.stringify({ __type: "agent_selector", agents })
+  return {
+    role: "assistant",
+    content: `Olá! Posso criar **casos de teste** ou **simulações** focados nas regras de negócio do seu agente.\n\nEscolha o agente que deseja testar:\n\n\`\`\`json\n${block}\n\`\`\``,
+    timestamp: new Date(),
+  }
+}
+
+const FALLBACK_MESSAGE: Message = {
+  role: "assistant",
+  content: "Olá! Posso criar **casos de teste** ou **simulações** para seus agentes.\n\nDiga **\"quero testar um agente\"** para começar.",
+  timestamp: new Date(),
+}
+
 export default function FloatingChat() {
   const [open, setOpen] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      content:
-        "Olá! Posso criar **casos de teste** ou **simulações** para seus agentes.\n\nDiga **\"quero testar um agente\"** para começar.",
-      timestamp: new Date(),
-    },
-  ])
+  const [messages, setMessages] = useState<Message[]>([FALLBACK_MESSAGE])
   const [input, setInput] = useState("")
   const [loading, setLoading] = useState(false)
   const [loadingStatus, setLoadingStatus] = useState("")
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const loadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    getAgents()
+      .then(agents => {
+        if (agents.length > 0) {
+          setMessages([buildAgentSelectorMessage(agents.map(a => ({ id: a.id, name: a.name })))])
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     function handleOpenChat() { setOpen(true) }
