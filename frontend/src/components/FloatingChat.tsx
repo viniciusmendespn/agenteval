@@ -71,8 +71,8 @@ const TYPE_COLORS: Record<string, string> = {
 type ParsedContent =
   | { type: "suggestions"; before: string; block: SuggestionsBlock; after: string }
   | { type: "simulation_suggestions"; before: string; block: SimulationSuggestionsBlock; after: string }
-  | { type: "agent_selector"; block: AgentSelectorBlock }
-  | { type: "mode_selector"; block: ModeSelectorBlock }
+  | { type: "agent_selector"; before: string; block: AgentSelectorBlock }
+  | { type: "mode_selector"; before: string; block: ModeSelectorBlock }
   | { type: "text"; content: string }
 
 function parseContent(content: string): ParsedContent {
@@ -80,11 +80,14 @@ function parseContent(content: string): ParsedContent {
   if (!match) return { type: "text", content }
   try {
     const parsed = JSON.parse(match[1])
+    const idx = content.indexOf("```json")
+    const end = content.indexOf("```", idx + 7) + 3
+    const before = content.slice(0, idx).trim()
     if (parsed.__type === "agent_selector" && Array.isArray(parsed.agents)) {
-      return { type: "agent_selector", block: { agents: parsed.agents } }
+      return { type: "agent_selector", before, block: { agents: parsed.agents } }
     }
     if (parsed.__type === "mode_selector" && parsed.agent_id) {
-      return { type: "mode_selector", block: { agent_id: parsed.agent_id, agent_name: parsed.agent_name } }
+      return { type: "mode_selector", before, block: { agent_id: parsed.agent_id, agent_name: parsed.agent_name } }
     }
     if (parsed.__type === "test_case_suggestions" && Array.isArray(parsed.cases)) {
       const idx = content.indexOf("```json")
@@ -649,14 +652,22 @@ export default function FloatingChat() {
   function renderAssistantMessage(content: string) {
     const parsed = parseContent(content)
     if (parsed.type === "agent_selector") {
-      return <AgentSelectorCards block={parsed.block} onSelect={handleAgentSelect} />
+      return (
+        <>
+          {parsed.before && renderMarkdown(parsed.before)}
+          <AgentSelectorCards block={parsed.block} onSelect={handleAgentSelect} />
+        </>
+      )
     }
     if (parsed.type === "mode_selector") {
       return (
-        <ModeSelectorCards
-          block={parsed.block}
-          onSelect={(mode) => handleModeSelect(mode, parsed.block.agent_id, parsed.block.agent_name)}
-        />
+        <>
+          {parsed.before && renderMarkdown(parsed.before)}
+          <ModeSelectorCards
+            block={parsed.block}
+            onSelect={(mode) => handleModeSelect(mode, parsed.block.agent_id, parsed.block.agent_name)}
+          />
+        </>
       )
     }
     if (parsed.type === "suggestions") {
