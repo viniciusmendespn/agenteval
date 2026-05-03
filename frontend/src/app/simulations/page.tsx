@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useMemo } from "react"
 import Link from "next/link"
 import { Plus, Bot } from "lucide-react"
-import { getSimulations, type Simulation } from "@/lib/api"
+import { getSimulations, getAgents, type Simulation, type Agent } from "@/lib/api"
 import DeleteButton from "@/components/DeleteButton"
 import { Breadcrumb } from "@/components/ui/Breadcrumb"
 import { TableSkeleton } from "@/components/Skeleton"
@@ -28,6 +28,8 @@ const statusLabel: Record<string, string> = {
 
 export default function SimulationsPage() {
   const [sims, setSims] = useState<Simulation[] | null>(null)
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [filterAgentId, setFilterAgentId] = useState<string>("")
   const [deleting, setDeleting] = useState<Set<number>>(new Set())
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -39,6 +41,7 @@ export default function SimulationsPage() {
 
   useEffect(() => {
     load()
+    getAgents().then(setAgents).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -70,6 +73,13 @@ export default function SimulationsPage() {
     setDeleting(prev => { const s = new Set(prev); s.delete(id); return s })
     load()
   }
+
+  const filtered = useMemo(() => {
+    if (!sims) return []
+    const base = sims.filter(s => !deleting.has(s.id))
+    if (!filterAgentId) return base
+    return base.filter(s => String(s.agent_id) === filterAgentId)
+  }, [sims, deleting, filterAgentId])
 
   return (
     <div>
@@ -108,58 +118,90 @@ export default function SimulationsPage() {
           </Link>
         </div>
       ) : (
-        <div className="flame-panel overflow-hidden">
-          <table className="flame-table">
-            <thead>
-              <tr>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Nome</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Agente</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Status</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Turnos</th>
-                <th className="text-left px-5 py-3 font-medium text-gray-600">Criada em</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {sims.filter(s => !deleting.has(s.id)).map(sim => (
-                <tr key={sim.id} className="hover:bg-gray-50/50">
-                  <td className="px-5 py-3 font-medium text-gray-900">
-                    <Link href={`/simulations/${sim.id}`} className="flame-link-action">
-                      {sim.name || `Simulação #${sim.id}`}
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3 text-gray-600">{sim.agent_name || "—"}</td>
-                  <td className="px-5 py-3">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor[sim.status] || "bg-gray-100 text-gray-600"}`}>
-                      {sim.status === "running" && (
-                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                      )}
-                      {statusLabel[sim.status] || sim.status}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-gray-600">{sim.total_turns}/{sim.max_messages}</td>
-                  <td className="px-5 py-3 text-gray-400">
-                    {new Date(sim.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                  </td>
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-3">
-                      <Link href={`/simulations/${sim.id}`} className="flame-link-action">abrir</Link>
-                      {sim.status !== "running" && (
-                        <DeleteButton
-                          id={sim.id}
-                          path="/simulations"
-                          onDeleteStart={() => markDeleting(sim.id)}
-                          onDeleteUndo={() => unmarkDeleting(sim.id)}
-                          onDeleted={() => setSims(prev => prev ? prev.filter(s => s.id !== sim.id) : prev)}
-                        />
-                      )}
-                    </div>
-                  </td>
+        <>
+          {agents.length > 1 && (
+            <div className="mb-4 flex items-center gap-2">
+              <label className="text-sm text-gray-500 shrink-0">Filtrar por agente:</label>
+              <select
+                value={filterAgentId}
+                onChange={e => setFilterAgentId(e.target.value)}
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:border-[var(--santander-red)]"
+              >
+                <option value="">Todos</option>
+                {agents.map(a => (
+                  <option key={a.id} value={String(a.id)}>{a.name}</option>
+                ))}
+              </select>
+              {filterAgentId && (
+                <button
+                  onClick={() => setFilterAgentId("")}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  limpar
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flame-panel overflow-hidden">
+            <table className="flame-table">
+              <thead>
+                <tr>
+                  <th className="text-left px-5 py-3 font-medium text-gray-600">Nome</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-600">Agente</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-600">Status</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-600">Turnos</th>
+                  <th className="text-left px-5 py-3 font-medium text-gray-600">Criada em</th>
+                  <th></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-8 text-center text-sm text-gray-400">
+                      Nenhuma simulação para este agente.
+                    </td>
+                  </tr>
+                ) : filtered.map(sim => (
+                  <tr key={sim.id} className="hover:bg-gray-50/50">
+                    <td className="px-5 py-3 font-medium text-gray-900">
+                      <Link href={`/simulations/${sim.id}`} className="flame-link-action">
+                        {sim.name || `Simulação #${sim.id}`}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">{sim.agent_name || "—"}</td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${statusColor[sim.status] || "bg-gray-100 text-gray-600"}`}>
+                        {sim.status === "running" && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                        )}
+                        {statusLabel[sim.status] || sim.status}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3 text-gray-600">{sim.total_turns}/{sim.max_messages}</td>
+                    <td className="px-5 py-3 text-gray-400">
+                      {new Date(sim.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-3">
+                        <Link href={`/simulations/${sim.id}`} className="flame-link-action">abrir</Link>
+                        {sim.status !== "running" && (
+                          <DeleteButton
+                            id={sim.id}
+                            path="/simulations"
+                            onDeleteStart={() => markDeleting(sim.id)}
+                            onDeleteUndo={() => unmarkDeleting(sim.id)}
+                            onDeleted={() => setSims(prev => prev ? prev.filter(s => s.id !== sim.id) : prev)}
+                          />
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   )
