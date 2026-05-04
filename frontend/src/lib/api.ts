@@ -381,13 +381,14 @@ export const updateGuardrail = (id: number, data: Omit<Guardrail, "id" | "preset
   request<Guardrail>(`/guardrails/${id}`, { method: "PUT", body: JSON.stringify(data) })
 export const deleteGuardrail = (id: number) =>
   request<void>(`/guardrails/${id}`, { method: "DELETE" })
-export const testConnection = (url: string, api_key: string) =>
+export const testConnection = (url: string, api_key: string, ssl_verify = false) =>
   request<{ ok: boolean; status_code?: number; error?: string }>("/agents/test-connection", {
-    method: "POST", body: JSON.stringify({ url, api_key }),
+    method: "POST", body: JSON.stringify({ url, api_key, ssl_verify }),
   })
 export const previewResponse = (data: {
   url: string; api_key: string; connection_type: string
   request_body: string; output_field: string; message: string; session_id?: string
+  ssl_verify?: boolean
 }) =>
   request<{
     connection_type: string; raw_response?: unknown; sample_events?: unknown[]

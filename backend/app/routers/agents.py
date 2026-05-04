@@ -75,6 +75,7 @@ def create_agent(
 class TestConnectionRequest(BaseModel):
     url: str
     api_key: str
+    ssl_verify: bool = False
 
 
 @router.post("/test-connection")
@@ -82,7 +83,7 @@ def test_connection(data: TestConnectionRequest):
     """Testa conectividade com um endpoint sem criar o agente."""
     try:
         headers = {"Authorization": f"Bearer {data.api_key}", "Content-Type": "application/json"}
-        response = httpx.post(data.url, json={}, headers=headers, timeout=10)
+        response = httpx.post(data.url, json={}, headers=headers, timeout=10, verify=data.ssl_verify)
         return {"ok": True, "status_code": response.status_code}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -96,6 +97,7 @@ class PreviewRequest(BaseModel):
     output_field: str = ""
     message: str = "Olá, tudo bem?"
     session_id: str = ""
+    ssl_verify: bool = False
 
 
 @router.post("/preview")
@@ -116,7 +118,7 @@ def preview_response(data: PreviewRequest):
             headers["Accept"] = "text/event-stream"
             events = []
             current_event = None
-            with httpx.stream("POST", data.url, json=payload, headers=headers, timeout=30) as response:
+            with httpx.stream("POST", data.url, json=payload, headers=headers, timeout=30, verify=data.ssl_verify) as response:
                 response.raise_for_status()
                 for line in response.iter_lines():
                     line = line.strip()
@@ -162,7 +164,7 @@ def preview_response(data: PreviewRequest):
             extracted = "".join(chunks) or None
             return {"connection_type": "sse", "sample_events": events, "extracted": extracted}
         else:
-            response = httpx.post(data.url, json=payload, headers=headers, timeout=30)
+            response = httpx.post(data.url, json=payload, headers=headers, timeout=30, verify=data.ssl_verify)
             response.raise_for_status()
             raw = response.json()
             extracted = None

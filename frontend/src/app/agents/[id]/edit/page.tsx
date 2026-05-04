@@ -175,7 +175,7 @@ export default function EditAgentPage() {
     if (!url) return
     setPinging(true); setPingResult(null)
     try {
-      const r = await testConnection(url, apiKey)
+      const r = await testConnection(url, apiKey, sslVerify)
       setPingResult({ ok: r.ok, msg: r.ok ? `OK (HTTP ${r.status_code})` : `Falhou: ${r.error}` })
     } catch (e: unknown) { setPingResult({ ok: false, msg: e instanceof Error ? e.message : "Erro" }) }
     finally { setPinging(false) }
@@ -186,7 +186,7 @@ export default function EditAgentPage() {
     const ciid = crypto.randomUUID()
     setPreviewSessionId(ciid); setPreviewing(true); setPreview(null)
     try {
-      const r = await previewResponse({ url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, message: previewMsg, session_id: ciid })
+      const r = await previewResponse({ url, api_key: apiKey, connection_type: connectionType, request_body: requestBody, output_field: outputField, message: previewMsg, session_id: ciid, ssl_verify: sslVerify })
       setPreview(r)
     } catch (e: unknown) { setPreview({ error: e instanceof Error ? e.message : "Erro" }) }
     finally { setPreviewing(false) }
@@ -257,6 +257,14 @@ export default function EditAgentPage() {
               </button>
             </div>
             {pingResult && <p className={`text-xs mt-1 ${pingResult.ok ? "text-green-600" : "text-red-500"}`}>{pingResult.msg}</p>}
+            <div className="flex items-center gap-2 mt-2">
+              <input type="checkbox" id="ssl_verify" checked={sslVerify} onChange={e => setSslVerify(e.target.checked)}
+                className="w-3.5 h-3.5 accent-red-600 cursor-pointer" />
+              <label htmlFor="ssl_verify" className="text-xs text-gray-600 select-none cursor-pointer">
+                Verificar certificado SSL
+              </label>
+              <span className="text-xs text-gray-400">(desativado por padrão — ambientes com proxy corporativo)</span>
+            </div>
           </div>
           <div>
             <label className={lbl}>Token de autenticação <span className="font-normal text-gray-400">(Bearer — opcional)</span></label>
@@ -346,14 +354,6 @@ export default function EditAgentPage() {
               placeholder="Ex: KB v3.2 (atualizada em 20/04), tool de consulta de saldo ativa, tool de PIX desativada para testes..."
               spellCheck={false}
             />
-          </div>
-          <div className="flex items-center gap-2 pt-1">
-            <input type="checkbox" id="ssl_verify" checked={sslVerify} onChange={e => setSslVerify(e.target.checked)}
-              className="w-3.5 h-3.5 accent-red-600 cursor-pointer" />
-            <label htmlFor="ssl_verify" className="text-xs text-gray-600 select-none cursor-pointer">
-              Verificar certificado SSL
-            </label>
-            <span className="text-xs text-gray-400">(desativado por padrão — ambientes com proxy corporativo)</span>
           </div>
         </section>
 
