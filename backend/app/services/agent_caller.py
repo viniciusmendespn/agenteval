@@ -73,7 +73,9 @@ def _fetch_token(token_url: str, token_request_body: str | None,
 def _call_http(url: str, api_key: str, message: str, request_body: str, output_field: str,
                timeout: int, session_id: str = "", variables: dict | None = None,
                system_prompt: str = "", ssl_verify: bool = False) -> str:
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     payload = _build_payload(request_body, message, session_id, variables, system_prompt)
 
     response = httpx.post(url, json=payload, headers=headers, timeout=timeout, verify=ssl_verify)
@@ -94,10 +96,11 @@ def _call_sse(url: str, api_key: str, message: str, request_body: str, output_fi
               timeout: int, session_id: str = "", variables: dict | None = None,
               system_prompt: str = "", ssl_verify: bool = False) -> str:
     headers = {
-        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
     }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     payload = _build_payload(request_body, message, session_id, variables, system_prompt)
     chunks: list[str] = []
     current_event: str | None = None
