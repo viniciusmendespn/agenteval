@@ -82,7 +82,9 @@ class TestConnectionRequest(BaseModel):
 def test_connection(data: TestConnectionRequest):
     """Testa conectividade com um endpoint sem criar o agente."""
     try:
-        headers = {"Authorization": f"Bearer {data.api_key}", "Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json"}
+        if data.api_key:
+            headers["Authorization"] = f"Bearer {data.api_key}"
         response = httpx.post(data.url, json={}, headers=headers, timeout=10, verify=data.ssl_verify)
         return {"ok": True, "status_code": response.status_code}
     except Exception as e:
@@ -106,10 +108,9 @@ def preview_response(data: PreviewRequest):
     Chama o agente com uma mensagem de teste e retorna a resposta bruta,
     para o usuário identificar o formato e configurar o output_field corretamente.
     """
-    headers = {
-        "Authorization": f"Bearer {data.api_key}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Content-Type": "application/json"}
+    if data.api_key:
+        headers["Authorization"] = f"Bearer {data.api_key}"
     from ..services.agent_caller import _build_payload
     payload = _build_payload(data.request_body, data.message, data.session_id)
 
